@@ -17,8 +17,7 @@ class ViewerGenerator:
         Returns:
             Complete HTML content as string
         """
-        # Embed manifest JSON
-        manifest_json = json.dumps(manifest)
+        # No longer embedding manifest - will fetch from manifest.json file
 
         html_template = """<!DOCTYPE html>
 <html lang="en">
@@ -501,19 +500,28 @@ class ViewerGenerator:
     </div>
 
     <script>
-        // Embed manifest data directly
-        let manifest = MANIFEST_DATA;
+        // Load manifest from file instead of embedding
+        let manifest = null;
         let currentConversation = null;
         let viewMode = 'focused';
         let showSnapshots = false;  // Toggle for showing snapshot files
         let showHidden = false;  // Toggle for showing hidden conversations
-        let hiddenConversations = new Set(manifest.hidden_conversations || []);  // Track hidden conversations
+        let hiddenConversations = new Set();  // Track hidden conversations
         let hasUnsavedChanges = false;  // Track if there are unsaved changes
 
         // Initialize on startup
-        function initializeViewer() {
-            displayStats();
-            displayConversationList();
+        async function initializeViewer() {
+            try {
+                // Fetch manifest.json from the same directory
+                const response = await fetch('manifest.json');
+                manifest = await response.json();
+                hiddenConversations = new Set(manifest.hidden_conversations || []);
+                displayStats();
+                displayConversationList();
+            } catch (error) {
+                console.error('Failed to load manifest:', error);
+                document.getElementById('conversationList').innerHTML = '<div style="color: #ff0000;">Failed to load manifest.json</div>';
+            }
         }
 
         function displayStats() {
@@ -1332,9 +1340,7 @@ class ViewerGenerator:
 </body>
 </html>"""
 
-        # Replace manifest placeholder with actual data
-        html_template = html_template.replace("MANIFEST_DATA", manifest_json)
-
+        # No longer replacing MANIFEST_DATA since we're fetching manifest.json
         return html_template
 
     def save_viewer(self, output_path: Path, manifest: dict[str, Any]) -> None:

@@ -47,9 +47,6 @@ This opens an interactive web viewer at `http://localhost:8000` where you can:
 # Archive with custom output location
 uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project --output /path/to/archives
 
-# Include snapshot files (excluded by default for cleaner results)
-uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project --include-snapshots
-
 # Skip sensitive data sanitization (not recommended)
 uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project --no-sanitize
 
@@ -124,7 +121,6 @@ claude-code-archiver [PROJECT_PATH] [OPTIONS]
 - `--refresh, -r PATH`: Refresh existing archive (PROJECT_PATH optional when using this)
 - `--alias, -a TEXT`: Include conversations from additional project paths (supports wildcards)
 - `--output, -o PATH`: Custom output directory
-- `--include-snapshots`: Include snapshot files (hidden by default)
 - `--no-sanitize`: Skip sanitization (not recommended)
 - `--list-only, -l`: List conversations without creating archive
 

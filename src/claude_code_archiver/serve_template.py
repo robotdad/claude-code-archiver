@@ -55,15 +55,30 @@ class ViewerHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             # For simplicity, we'll expect the manifest as JSON in the request body
             if self.headers.get('Content-Type', '').startswith('multipart/form-data'):
                 # Handle multipart form data (from the browser)
-                import cgi
-                form = cgi.FieldStorage(
-                    fp=self.rfile,
-                    headers=self.headers,
-                    environ={'REQUEST_METHOD': 'POST'}
-                )
+                content_length = int(self.headers.get('Content-Length', 0))
+                post_data = self.rfile.read(content_length)
+                
+                # Simple multipart parsing for manifest field
+                boundary = None
+                content_type = self.headers.get('Content-Type', '')
+                if 'boundary=' in content_type:
+                    boundary = content_type.split('boundary=')[1].split(';')[0].strip()
+                
+                form = {}
+                if boundary:
+                    try:
+                        parts = post_data.decode('utf-8').split(f'--{boundary}')
+                        for part in parts:
+                            if 'name="manifest"' in part and '\r\n\r\n' in part:
+                                data = part.split('\r\n\r\n', 1)[1]
+                                data = data.rstrip('\r\n-').rstrip()
+                                form['manifest'] = data
+                                break
+                    except Exception as e:
+                        print(f'Error parsing multipart data: {e}')
 
                 if 'manifest' in form:
-                    manifest_data = form['manifest'].value
+                    manifest_data = form['manifest']
                     if isinstance(manifest_data, bytes):
                         manifest_data = manifest_data.decode('utf-8')
 
@@ -129,21 +144,30 @@ class ViewerHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             # Parse form data to get manifest
             if self.headers.get('Content-Type', '').startswith('multipart/form-data'):
                 # Handle multipart form data (from the browser)
-                import cgi
-                import io
-                
-                # Create a new rfile from the request body since cgi.FieldStorage consumes it
                 content_length = int(self.headers.get('Content-Length', 0))
                 post_data = self.rfile.read(content_length)
                 
-                form = cgi.FieldStorage(
-                    fp=io.BytesIO(post_data),
-                    headers=self.headers,
-                    environ={'REQUEST_METHOD': 'POST', 'CONTENT_LENGTH': str(content_length)}
-                )
+                # Simple multipart parsing for manifest field
+                boundary = None
+                content_type = self.headers.get('Content-Type', '')
+                if 'boundary=' in content_type:
+                    boundary = content_type.split('boundary=')[1].split(';')[0].strip()
+                
+                form = {}
+                if boundary:
+                    try:
+                        parts = post_data.decode('utf-8').split(f'--{boundary}')
+                        for part in parts:
+                            if 'name="manifest"' in part and '\r\n\r\n' in part:
+                                data = part.split('\r\n\r\n', 1)[1]
+                                data = data.rstrip('\r\n-').rstrip()
+                                form['manifest'] = data
+                                break
+                    except Exception as e:
+                        print(f'Error parsing multipart data: {e}')
                 
                 if 'manifest' in form:
-                    manifest_data = form['manifest'].value
+                    manifest_data = form['manifest']
                     if isinstance(manifest_data, bytes):
                         manifest_data = manifest_data.decode('utf-8')
                     
@@ -245,30 +269,9 @@ class ViewerHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": str(e)}).encode())
 
     def _update_viewer_html(self):
-        """Update viewer.html with the new manifest data."""
-        try:
-            # Read current manifest
-            with open("manifest.json", encoding="utf-8") as f:
-                manifest_data = json.load(f)
-
-            # Read current viewer.html
-            with open("viewer.html", encoding="utf-8") as f:
-                html_content = f.read()
-
-            # Replace the manifest data in the HTML
-            manifest_json = json.dumps(manifest_data)
-            old_pattern = r'let manifest = .*?;'
-            new_content = f'let manifest = {manifest_json};'
-
-            import re
-            updated_html = re.sub(old_pattern, new_content, html_content, flags=re.DOTALL)
-
-            # Write updated viewer.html
-            with open("viewer.html", "w", encoding="utf-8") as f:
-                f.write(updated_html)
-
-        except Exception as e:
-            print(f"Warning: Could not update viewer.html: {e}")
+        """No longer needed - viewer.html fetches manifest.json directly."""
+        # Viewer now fetches manifest.json directly, no need to update HTML
+        pass
 
     def log_message(self, format: str, *args: Any) -> None:
         """Only log errors, not every request."""

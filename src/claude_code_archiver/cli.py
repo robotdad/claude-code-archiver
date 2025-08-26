@@ -39,11 +39,6 @@ console = Console()
     help="List conversations without creating archive",
 )
 @click.option(
-    "--include-snapshots",
-    is_flag=True,
-    help="Include intermediate conversation snapshots (excluded by default)",
-)
-@click.option(
     "--no-todos",
     is_flag=True,
     help="Don't include todo files from ~/.claude/todos/",
@@ -67,7 +62,6 @@ def main(
     no_sanitize: bool,
     name: str,
     list_only: bool,
-    include_snapshots: bool,
     no_todos: bool,
     alias: tuple[str, ...],
     refresh: Path | None,
@@ -108,7 +102,7 @@ def main(
 
         # Discover conversations from main project
         console.print(f"\n🔍 Discovering conversations for: [cyan]{project_path}[/cyan]")
-        conversations = discovery.discover_project_conversations(project_path, exclude_snapshots=not include_snapshots)
+        conversations = discovery.discover_project_conversations(project_path, exclude_snapshots=False)
 
         # Add conversations from aliases
         if alias:
@@ -125,14 +119,14 @@ def main(
                         console.print(f"    Expanded to {len(expanded_paths)} path(s):")
                         for alias_path in expanded_paths:
                             console.print(f"      → [dim cyan]{alias_path}[/dim cyan]")
-                            alias_conversations = discovery.discover_project_conversations(alias_path, exclude_snapshots=not include_snapshots)
+                            alias_conversations = discovery.discover_project_conversations(alias_path, exclude_snapshots=False)
                             conversations.extend(alias_conversations)
                             console.print(f"        Found [green]{len(alias_conversations)}[/green] conversation(s)")
                     else:
                         console.print(f"    [yellow]No directories found matching pattern[/yellow]")
                 else:
                     # Handle as literal path
-                    alias_conversations = discovery.discover_project_conversations(Path(alias_pattern), exclude_snapshots=not include_snapshots)
+                    alias_conversations = discovery.discover_project_conversations(Path(alias_pattern), exclude_snapshots=False)
                     conversations.extend(alias_conversations)
                     console.print(f"    Found [green]{len(alias_conversations)}[/green] conversation(s)")
 
@@ -195,10 +189,7 @@ def main(
             else:
                 console.print("  ⚠️  [yellow]Skipping sanitization (--no-sanitize)[/yellow]")
 
-            if include_snapshots:
-                console.print("  ✓ Including intermediate snapshots")
-            else:
-                console.print("  ✓ Excluding intermediate snapshots (default)")
+            console.print("  ✓ Including intermediate snapshots (toggleable in viewer)")
 
             if not no_todos:
                 console.print("  ✓ Including todo files")
@@ -210,7 +201,7 @@ def main(
                 project_path=project_path,
                 sanitize=sanitize,
                 output_name=name,
-                include_snapshots=include_snapshots,
+                include_snapshots=True,
                 include_todos=not no_todos,
                 project_aliases=project_aliases,
             )
