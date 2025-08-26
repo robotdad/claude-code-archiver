@@ -21,7 +21,7 @@ class ViewerHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 with open("viewer.html", "rb") as f:
                     content = f.read()
-                
+
                 self.send_response(200)
                 self.send_header("Content-type", "text/html")
                 self.send_header("Content-length", str(len(content)))
@@ -31,7 +31,7 @@ class ViewerHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             except FileNotFoundError:
                 self.send_error(404, "viewer.html not found")
                 return
-        
+
         # Call the parent method to handle other requests
         super().do_GET()
 
