@@ -1,0 +1,43 @@
+# Ruff configuration
+line-length = 120
+target-version = "py311"
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # Pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "DTZ",  # flake8-datetimez
+    "T10",  # flake8-debugger
+    "RET",  # flake8-return
+    "SIM",  # flake8-simplify
+    "TID",  # flake8-tidy-imports
+]
+
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "B008",   # Do not perform function calls in argument defaults
+    "UP007",  # Use X | Y for type unions (keep Optional for clarity)
+    "SIM108", # Use ternary operator (sometimes if/else is clearer)
+    "RET504", # Unnecessary assignment before return (sometimes clearer)
+]
+
+[lint.per-file-ignores]
+"__init__.py" = ["E402", "F401", "F403"]
+"test_*.py" = ["D100", "D101", "D102", "D103", "D104"]
+"tests/*" = ["D100", "D101", "D102", "D103", "D104"]
+
+[lint.isort]
+combine-as-imports = true
+force-single-line = true
