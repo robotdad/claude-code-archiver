@@ -10,8 +10,30 @@ from typing import Any
 PORT = 8000
 
 
-class QuietHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
-    """HTTP request handler with minimal logging."""
+class ViewerHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
+    """HTTP request handler that serves viewer.html at root path."""
+
+    def do_GET(self):
+        """Handle GET requests, serving viewer.html for root path."""
+        # If requesting root path, redirect to viewer.html
+        if self.path == "/" or self.path == "":
+            # Read and serve viewer.html directly
+            try:
+                with open("viewer.html", "rb") as f:
+                    content = f.read()
+                
+                self.send_response(200)
+                self.send_header("Content-type", "text/html")
+                self.send_header("Content-length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+                return
+            except FileNotFoundError:
+                self.send_error(404, "viewer.html not found")
+                return
+        
+        # Call the parent method to handle other requests
+        super().do_GET()
 
     def log_message(self, format: str, *args: Any) -> None:
         """Only log errors, not every request."""
@@ -31,14 +53,14 @@ def main():
     port = PORT
     while port < PORT + 100:
         try:
-            with socketserver.TCPServer(("", port), QuietHTTPRequestHandler) as httpd:
+            with socketserver.TCPServer(("", port), ViewerHTTPRequestHandler) as httpd:
                 print(f"🚀 Starting server at http://localhost:{port}")
                 print(f"📂 Serving files from: {script_dir}")
                 print("🌐 Opening viewer in your browser...")
                 print("\n✨ Press Ctrl+C to stop the server\n")
 
-                # Open the viewer in the default browser
-                webbrowser.open(f"http://localhost:{port}/viewer.html")
+                # Open the viewer in the default browser (now just the root URL)
+                webbrowser.open(f"http://localhost:{port}")
 
                 # Start serving
                 httpd.serve_forever()
