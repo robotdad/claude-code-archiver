@@ -380,6 +380,7 @@ class ViewerGenerator:
         let manifest = MANIFEST_DATA;
         let currentConversation = null;
         let viewMode = 'focused';
+        let showSnapshots = false;  // Toggle for showing snapshot files
 
         // Initialize on startup
         function initializeViewer() {
@@ -403,15 +404,30 @@ class ViewerGenerator:
             listContainer.innerHTML = '';
 
             manifest.conversations.forEach(conv => {
+                // Skip snapshots by default unless showing all
+                if (!showSnapshots && conv.conversation_type === 'snapshot') {
+                    return;
+                }
+
                 const item = document.createElement('div');
                 item.className = 'conversation-item';
+                if (conv.conversation_type === 'snapshot') {
+                    item.className += ' snapshot';
+                }
                 item.onclick = () => loadConversation(conv);
 
-                const continuation = conv.starts_with_summary ?
-                    '<span class="continuation-marker">[CONTINUATION]</span> ' : '';
+                // Determine the marker based on conversation type
+                let marker = '';
+                if (conv.conversation_type === 'post_compaction') {
+                    // Only mark true continuations
+                    marker = '<span class="continuation-marker">[CONTINUATION]</span> ';
+                } else if (conv.conversation_type === 'snapshot') {
+                    marker = '<span class="snapshot-marker">[SNAPSHOT]</span> ';
+                }
+                // Note: auto_linked and auto_linked_with_internal_compaction get no marker
 
                 item.innerHTML = `
-                    <div class="session-id">${continuation}${conv.session_id.substring(0, 12)}...</div>
+                    <div class="session-id">${marker}${conv.session_id.substring(0, 12)}...</div>
                     <div class="meta">
                         Messages: ${conv.message_count} |
                         ${conv.first_timestamp ? new Date(conv.first_timestamp).toLocaleDateString() : 'Unknown date'}

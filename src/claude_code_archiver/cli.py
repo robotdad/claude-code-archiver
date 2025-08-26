@@ -38,6 +38,16 @@ console = Console()
     is_flag=True,
     help="List conversations without creating archive",
 )
+@click.option(
+    "--include-snapshots",
+    is_flag=True,
+    help="Include intermediate conversation snapshots (excluded by default)",
+)
+@click.option(
+    "--no-todos",
+    is_flag=True,
+    help="Don't include todo files from ~/.claude/todos/",
+)
 @click.version_option(version=__version__)
 def main(
     project_path: Path,
@@ -45,6 +55,8 @@ def main(
     no_sanitize: bool,
     name: str,
     list_only: bool,
+    include_snapshots: bool,
+    no_todos: bool,
 ) -> None:
     """Archive Claude Code conversations for a project.
 
@@ -55,7 +67,7 @@ def main(
 
         # Discover conversations
         console.print(f"\n🔍 Discovering conversations for: [cyan]{project_path}[/cyan]")
-        conversations = discovery.discover_project_conversations(project_path)
+        conversations = discovery.discover_project_conversations(project_path, exclude_snapshots=not include_snapshots)
 
         if not conversations:
             console.print("[yellow]No conversations found for this project.[/yellow]")
@@ -73,7 +85,13 @@ def main(
             table.add_column("Continuation", style="yellow")
 
             for conv in conversations:
-                continuation = "✓" if conv.starts_with_summary else ""
+                # Show snapshot info if present
+                if conv.is_snapshot:
+                    continuation = f"📸 {conv.snapshot_type}"
+                elif conv.starts_with_summary:
+                    continuation = "✓ continuation"
+                else:
+                    continuation = ""
                 size_kb = conv.size / 1024
                 started = conv.first_timestamp[:10] if conv.first_timestamp else "Unknown"
 
@@ -104,10 +122,20 @@ def main(
             else:
                 console.print("  ⚠️  [yellow]Skipping sanitization (--no-sanitize)[/yellow]")
 
+            if include_snapshots:
+                console.print("  ✓ Including intermediate snapshots")
+            else:
+                console.print("  ✓ Excluding intermediate snapshots (default)")
+
+            if not no_todos:
+                console.print("  ✓ Including todo files")
+
             archive_path = archiver.create_archive(
                 project_path=project_path,
                 sanitize=sanitize,
                 output_name=name,
+                include_snapshots=include_snapshots,
+                include_todos=not no_todos,
             )
 
             console.print(f"\n✅ Archive created: [green]{archive_path}[/green]")
