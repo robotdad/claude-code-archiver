@@ -15,7 +15,7 @@ console = Console()
 
 
 @click.command()
-@click.argument("project_path", type=click.Path(exists=True, path_type=Path))
+@click.argument("project_path", type=click.Path(exists=True, path_type=Path), required=False)
 @click.option(
     "--output",
     "-o",
@@ -48,26 +48,99 @@ console = Console()
     is_flag=True,
     help="Don't include todo files from ~/.claude/todos/",
 )
+@click.option(
+    "--alias",
+    "-a",
+    multiple=True,
+    help="Additional project paths/aliases to include conversations from (can be used multiple times)",
+)
+@click.option(
+    "--refresh",
+    "-r",
+    type=click.Path(exists=True, path_type=Path),
+    help="Refresh an existing archive with new conversations",
+)
 @click.version_option(version=__version__)
 def main(
-    project_path: Path,
+    project_path: Path | None,
     output: Path,
     no_sanitize: bool,
     name: str,
     list_only: bool,
     include_snapshots: bool,
     no_todos: bool,
+    alias: tuple[str, ...],
+    refresh: Path | None,
 ) -> None:
     """Archive Claude Code conversations for a project.
 
     PROJECT_PATH: Path to the project directory to archive conversations for.
+                  Optional when using --refresh (uses paths from archive manifest).
     """
     try:
+        # Handle refresh mode
+        if refresh:
+            archiver = Archiver(output_dir=output)
+            console.print(f"\n🔄 Refreshing archive: [cyan]{refresh}[/cyan]")
+
+            # Convert aliases to list of strings
+            project_aliases = list(alias) if alias else None
+
+            refreshed_archive = archiver.refresh_archive(
+                archive_path=refresh,
+                project_path=project_path,
+                project_aliases=project_aliases,
+                sanitize=not no_sanitize,
+                include_todos=not no_todos,
+            )
+
+            console.print(f"\n✅ Archive refreshed: [green]{refreshed_archive}[/green]")
+            console.print("  ✓ Updated viewer and server files with latest features")
+            console.print("  ✓ Preserved hidden conversations and user preferences")
+            return
+
+        # For non-refresh operations, project_path is required
+        if project_path is None:
+            console.print("[red]Error:[/red] PROJECT_PATH is required when not using --refresh")
+            sys.exit(1)
+
         discovery = ProjectDiscovery()
 
-        # Discover conversations
+        # Discover conversations from main project
         console.print(f"\n🔍 Discovering conversations for: [cyan]{project_path}[/cyan]")
         conversations = discovery.discover_project_conversations(project_path, exclude_snapshots=not include_snapshots)
+
+        # Add conversations from aliases
+        if alias:
+            console.print(f"🔍 Including conversations from {len(alias)} alias(es):")
+            for alias_pattern in alias:
+                console.print(f"  - [cyan]{alias_pattern}[/cyan]")
+                
+                # Handle wildcard patterns
+                if '*' in alias_pattern or '?' in alias_pattern:
+                    from pathlib import Path
+                    alias_paths = list(Path(alias_pattern).parent.glob(Path(alias_pattern).name))
+                    expanded_paths = [p for p in alias_paths if p.is_dir()]
+                    if expanded_paths:
+                        console.print(f"    Expanded to {len(expanded_paths)} path(s):")
+                        for alias_path in expanded_paths:
+                            console.print(f"      → [dim cyan]{alias_path}[/dim cyan]")
+                            alias_conversations = discovery.discover_project_conversations(alias_path, exclude_snapshots=not include_snapshots)
+                            conversations.extend(alias_conversations)
+                            console.print(f"        Found [green]{len(alias_conversations)}[/green] conversation(s)")
+                    else:
+                        console.print(f"    [yellow]No directories found matching pattern[/yellow]")
+                else:
+                    # Handle as literal path
+                    alias_conversations = discovery.discover_project_conversations(Path(alias_pattern), exclude_snapshots=not include_snapshots)
+                    conversations.extend(alias_conversations)
+                    console.print(f"    Found [green]{len(alias_conversations)}[/green] conversation(s)")
+
+        # Remove duplicates based on session_id
+        unique_conversations = {}
+        for conv in conversations:
+            unique_conversations[conv.session_id] = conv
+        conversations = list(unique_conversations.values())
 
         if not conversations:
             console.print("[yellow]No conversations found for this project.[/yellow]")
@@ -130,12 +203,16 @@ def main(
             if not no_todos:
                 console.print("  ✓ Including todo files")
 
+            # Convert aliases to list for archiver
+            project_aliases = list(alias) if alias else None
+
             archive_path = archiver.create_archive(
                 project_path=project_path,
                 sanitize=sanitize,
                 output_name=name,
                 include_snapshots=include_snapshots,
                 include_todos=not no_todos,
+                project_aliases=project_aliases,
             )
 
             console.print(f"\n✅ Archive created: [green]{archive_path}[/green]")

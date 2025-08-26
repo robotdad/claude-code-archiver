@@ -21,7 +21,7 @@ from .viewer import ViewerGenerator
 class ArchiveManifest(BaseModel):
     """Manifest for the archive."""
 
-    version: str = "1.0"
+    version: str = "2.0"
     created_at: str
     project_path: str
     conversation_count: int
@@ -31,6 +31,12 @@ class ArchiveManifest(BaseModel):
     continuation_chains: dict[str, list[str]]
     sanitization_stats: dict[str, Any] | None = None
     todos: dict[str, Any] | None = None
+
+    # New enhancement fields
+    project_aliases: list[str] | None = None  # List of project path aliases used
+    hidden_conversations: list[str] | None = None  # List of session IDs to hide
+    user_metadata: dict[str, Any] | None = None  # User customizations and preferences
+    last_refresh: str | None = None  # Timestamp of last refresh operation
 
 
 class Archiver:
@@ -55,6 +61,7 @@ class Archiver:
         output_name: str | None = None,
         include_snapshots: bool = False,
         include_todos: bool = True,
+        project_aliases: list[str] | None = None,
     ) -> Path:
         """Create an archive for a project's conversations.
 
@@ -64,6 +71,7 @@ class Archiver:
             output_name: Optional custom archive name
             include_snapshots: Whether to include intermediate conversation snapshots
             include_todos: Whether to include todo files from ~/.claude/todos/
+            project_aliases: Additional project names/paths to include conversations from
 
         Returns:
             Path to the created archive
@@ -71,11 +79,37 @@ class Archiver:
         Raises:
             ValueError: If project has no conversations
         """
-        # Discover all conversations and tag them appropriately
+        # Discover all conversations from main project and aliases
         conversations = self.discovery.discover_project_conversations(
             project_path,
             exclude_snapshots=False,  # Always get all files, tag them in manifest
         )
+
+        # Add conversations from project aliases if provided
+        all_project_paths = [str(project_path)]
+        if project_aliases:
+            for alias in project_aliases:
+                # Handle wildcard patterns
+                if '*' in alias or '?' in alias:
+                    # Use glob to expand wildcards
+                    alias_paths = list(Path(alias).parent.glob(Path(alias).name))
+                    for alias_path in alias_paths:
+                        if alias_path.is_dir():
+                            alias_conversations = self.discovery.discover_project_conversations(
+                                alias_path,
+                                exclude_snapshots=False,
+                            )
+                            conversations.extend(alias_conversations)
+                            all_project_paths.append(str(alias_path))
+                else:
+                    # Handle as literal path
+                    alias_path = Path(alias)
+                    alias_conversations = self.discovery.discover_project_conversations(
+                        alias_path,
+                        exclude_snapshots=False,
+                    )
+                    conversations.extend(alias_conversations)
+                    all_project_paths.append(str(alias_path))
 
         if not conversations:
             raise ValueError(f"No conversations found for project: {project_path}")
@@ -225,6 +259,10 @@ class Archiver:
                 continuation_chains=chains,
                 sanitization_stats=sanitization_stats.model_dump() if sanitize else None,
                 todos=todos_metadata if include_todos else None,
+                project_aliases=all_project_paths if len(all_project_paths) > 1 else None,
+                hidden_conversations=[],  # Initially no hidden conversations
+                user_metadata={},  # Empty user metadata initially
+                last_refresh=None,  # No refresh yet
             )
 
             # Write manifest
@@ -464,3 +502,214 @@ class Archiver:
             zipf.extractall(extract_dir)
 
         return extract_dir
+
+    def update_manifest(self, extracted_dir: Path, updated_manifest: dict[str, Any]) -> None:
+        """Update manifest in extracted archive.
+
+        Args:
+            extracted_dir: Path to extracted archive directory
+            updated_manifest: Updated manifest data
+        """
+        manifest_path = extracted_dir / "manifest.json"
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(updated_manifest, f, indent=2)
+
+    def repack_archive(self, extracted_dir: Path, archive_path: Path) -> Path:
+        """Repack an extracted archive with updates.
+
+        Args:
+            extracted_dir: Path to extracted archive directory
+            archive_path: Path to original archive file
+
+        Returns:
+            Path to the repacked archive
+        """
+        # Update viewer with new manifest
+        manifest_path = extracted_dir / "manifest.json"
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest_data = json.load(f)
+
+        viewer_path = extracted_dir / "viewer.html"
+        self.viewer.save_viewer(viewer_path, manifest_data)
+
+        # Create new ZIP archive
+        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for file_path in extracted_dir.rglob("*"):
+                if file_path.is_file():
+                    arcname = file_path.relative_to(extracted_dir)
+                    zipf.write(file_path, arcname)
+
+        return archive_path
+
+    def refresh_archive(
+        self,
+        archive_path: Path,
+        project_path: Path | None = None,
+        project_aliases: list[str] | None = None,
+        sanitize: bool = True,
+        include_todos: bool = True,
+    ) -> Path:
+        """Refresh an existing archive with new conversations while preserving user modifications.
+
+        Args:
+            archive_path: Path to existing archive
+            project_path: Project path to refresh from (uses original if None)
+            project_aliases: Updated project aliases
+            sanitize: Whether to sanitize sensitive data in new conversations
+            include_todos: Whether to include todo files
+
+        Returns:
+            Path to refreshed archive
+        """
+        # Extract existing archive
+        extracted_dir = self.extract_archive(archive_path)
+
+        try:
+            # Load existing manifest
+            manifest_path = extracted_dir / "manifest.json"
+            with open(manifest_path, encoding="utf-8") as f:
+                existing_manifest = json.load(f)
+
+            # Use existing project path and aliases if not provided
+            if project_path is None:
+                project_path = Path(existing_manifest["project_path"])
+                
+            # Use existing aliases if not provided, or merge with existing if both provided
+            existing_aliases = existing_manifest.get("project_aliases", [])
+            if project_aliases is None:
+                # No new aliases provided, use existing ones
+                project_aliases = existing_aliases
+            else:
+                # Merge new aliases with existing ones, removing duplicates
+                all_aliases = list(set(existing_aliases + project_aliases))
+                project_aliases = all_aliases
+
+            # Get existing conversation session IDs
+            existing_session_ids = {conv["session_id"] for conv in existing_manifest["conversations"]}
+
+            # Discover new conversations
+            new_conversations = self.discovery.discover_project_conversations(
+                project_path,
+                exclude_snapshots=False,
+            )
+
+            # Add from aliases if provided
+            all_paths = [str(project_path)]
+            if project_aliases:
+                for alias in project_aliases:
+                    # Handle wildcard patterns
+                    if '*' in alias or '?' in alias:
+                        # Use glob to expand wildcards
+                        alias_paths = list(Path(alias).parent.glob(Path(alias).name))
+                        for alias_path in alias_paths:
+                            if alias_path.is_dir():
+                                alias_conversations = self.discovery.discover_project_conversations(
+                                    alias_path,
+                                    exclude_snapshots=False,
+                                )
+                                new_conversations.extend(alias_conversations)
+                                all_paths.append(str(alias_path))
+                    else:
+                        # Handle as literal path
+                        alias_path = Path(alias)
+                        alias_conversations = self.discovery.discover_project_conversations(
+                            alias_path,
+                            exclude_snapshots=False,
+                        )
+                        new_conversations.extend(alias_conversations)
+                        all_paths.append(str(alias_path))
+
+            # Filter to only new conversations
+            new_conversations = [conv for conv in new_conversations
+                               if conv.session_id not in existing_session_ids]
+
+            if not new_conversations:
+                # No new conversations, but still update serve.py and viewer.html with latest versions
+                serve_template = Path(__file__).parent / "serve_template.py"
+                serve_path = extracted_dir / "serve.py"
+                shutil.copy2(serve_template, serve_path)
+                
+                existing_manifest["last_refresh"] = datetime.now(UTC).isoformat()
+                if project_aliases:
+                    existing_manifest["project_aliases"] = all_paths
+                self.update_manifest(extracted_dir, existing_manifest)
+                return self.repack_archive(extracted_dir, archive_path)
+
+            # Process new conversations
+            conversations_dir = extracted_dir / "conversations"
+            new_manifest_conversations = []
+            total_new_messages = 0
+
+            for conv in new_conversations:
+                # Copy and optionally sanitize conversation file
+                output_filename = conv.path.name
+                output_file = conversations_dir / output_filename
+
+                if sanitize:
+                    self.sanitizer.sanitize_file(conv.path, output_file)
+                else:
+                    shutil.copy2(conv.path, output_file)
+
+                # Parse for statistics
+                entries = self.parser.parse_file(output_file)
+                stats = self.parser.extract_statistics(entries)
+                total_new_messages += stats["total_messages"]
+
+                # Extract conversation title
+                conversation_title = self._extract_conversation_title(output_file)
+
+                # Add to manifest
+                manifest_conv = {
+                    "session_id": conv.session_id,
+                    "file": f"conversations/{output_filename}",
+                    "title": conversation_title,
+                    "message_count": conv.message_count,
+                    "first_timestamp": conv.first_timestamp,
+                    "last_timestamp": conv.last_timestamp,
+                    "starts_with_summary": conv.starts_with_summary,
+                    "is_post_compaction": conv.parent_session_id is not None,
+                    "parent_session_id": conv.parent_session_id,
+                    "statistics": stats,
+                    "conversation_type": "original",  # Default, will be updated
+                    "display_by_default": True,
+                }
+
+                new_manifest_conversations.append(manifest_conv)
+
+            # Update existing manifest with new data
+            existing_manifest["conversations"].extend(new_manifest_conversations)
+            existing_manifest["conversation_count"] = len(existing_manifest["conversations"])
+            existing_manifest["total_messages"] += total_new_messages
+            existing_manifest["last_refresh"] = datetime.now(UTC).isoformat()
+
+            if project_aliases:
+                existing_manifest["project_aliases"] = all_paths
+
+            # Update date range if necessary
+            new_timestamps = [c["first_timestamp"] for c in new_manifest_conversations
+                            if c["first_timestamp"]]
+            if new_timestamps:
+                current_earliest = existing_manifest["date_range"]["earliest"]
+                current_latest = existing_manifest["date_range"]["latest"]
+
+                if current_earliest is None or min(new_timestamps) < current_earliest:
+                    existing_manifest["date_range"]["earliest"] = min(new_timestamps)
+
+                latest_timestamps = [c["last_timestamp"] for c in new_manifest_conversations
+                                   if c["last_timestamp"]]
+                if latest_timestamps and (current_latest is None or max(latest_timestamps) > current_latest):
+                        existing_manifest["date_range"]["latest"] = max(latest_timestamps)
+
+            # Update serve.py and viewer.html with latest versions
+            serve_template = Path(__file__).parent / "serve_template.py"
+            serve_path = extracted_dir / "serve.py"
+            shutil.copy2(serve_template, serve_path)
+
+            # Save updated manifest and repack (this also updates viewer.html)
+            self.update_manifest(extracted_dir, existing_manifest)
+            return self.repack_archive(extracted_dir, archive_path)
+
+        finally:
+            # Clean up extracted directory
+            if extracted_dir.exists():
+                shutil.rmtree(extracted_dir)

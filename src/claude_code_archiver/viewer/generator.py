@@ -90,6 +90,42 @@ class ViewerGenerator:
             padding: 10px;
             border-bottom: 1px solid #00ff00;
             color: #ffb000;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .list-controls {
+            display: flex;
+            gap: 5px;
+        }
+
+        .small-btn {
+            background: #1a1a1a;
+            border: 1px solid #666;
+            color: #666;
+            padding: 2px 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 10px;
+        }
+
+        .small-btn:hover {
+            background: #222;
+            color: #888;
+        }
+
+        .small-btn.active {
+            background: #333;
+            color: #ffb000;
+            border-color: #ffb000;
+        }
+
+        .small-btn:disabled {
+            background: #111;
+            color: #444;
+            border-color: #444;
+            cursor: not-allowed;
         }
 
         .conversation-items {
@@ -155,6 +191,36 @@ class ViewerGenerator:
             font-size: 10px;
         }
 
+        .conversation-item.hidden {
+            opacity: 0.5;
+            background: #0a0a0a !important;
+        }
+
+        .conversation-item .conversation-actions {
+            margin-top: 5px;
+            display: none;
+        }
+
+        .conversation-item:hover .conversation-actions {
+            display: block;
+        }
+
+        .conversation-actions button {
+            background: none;
+            border: 1px solid #444;
+            color: #888;
+            padding: 1px 4px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 9px;
+            margin-right: 5px;
+        }
+
+        .conversation-actions button:hover {
+            color: #ffb000;
+            border-color: #ffb000;
+        }
+
         /* Conversation View */
         .conversation-view {
             flex: 1;
@@ -186,6 +252,15 @@ class ViewerGenerator:
 
         .view-controls {
             margin-top: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            gap: 5px;
+            align-items: center;
         }
 
         .btn {
@@ -393,7 +468,12 @@ class ViewerGenerator:
         <div class="main-content">
             <div class="conversation-list">
                 <div class="list-header">
-                    [CONVERSATIONS]
+                    <span>[CONVERSATIONS]</span>
+                    <div class="list-controls">
+                        <button class="small-btn" id="showSnapshotsBtn">Snapshots</button>
+                        <button class="small-btn" id="showHiddenBtn">Hidden</button>
+                        <button class="small-btn" id="saveChangesBtn">Save</button>
+                    </div>
                 </div>
                 <div class="conversation-items" id="conversationList">
                     <div class="loading">Loading conversations...</div>
@@ -404,8 +484,13 @@ class ViewerGenerator:
                 <div class="view-header">
                     <div id="viewTitle">[NO CONVERSATION SELECTED]</div>
                     <div class="view-controls">
-                        <button class="btn active" id="focusedModeBtn">FOCUSED MODE</button>
-                        <button class="btn" id="detailedModeBtn">DETAILED MODE</button>
+                        <div class="control-group">
+                            <button class="btn active" id="focusedModeBtn">FOCUSED MODE</button>
+                            <button class="btn" id="detailedModeBtn">DETAILED MODE</button>
+                        </div>
+                        <div class="control-group">
+                            <button class="btn" id="exportBtn">EXPORT</button>
+                        </div>
                     </div>
                 </div>
                 <div id="messages" class="messages">
@@ -421,6 +506,9 @@ class ViewerGenerator:
         let currentConversation = null;
         let viewMode = 'focused';
         let showSnapshots = false;  // Toggle for showing snapshot files
+        let showHidden = false;  // Toggle for showing hidden conversations
+        let hiddenConversations = new Set(manifest.hidden_conversations || []);  // Track hidden conversations
+        let hasUnsavedChanges = false;  // Track if there are unsaved changes
 
         // Initialize on startup
         function initializeViewer() {
@@ -449,12 +537,26 @@ class ViewerGenerator:
                     return;
                 }
 
+                // Skip hidden conversations unless showing them
+                const isHidden = hiddenConversations.has(conv.session_id);
+                if (isHidden && !showHidden) {
+                    return;
+                }
+
                 const item = document.createElement('div');
                 item.className = 'conversation-item';
                 if (conv.conversation_type === 'snapshot') {
                     item.className += ' snapshot';
                 }
-                item.onclick = () => loadConversation(conv);
+                if (isHidden) {
+                    item.className += ' hidden';
+                }
+                item.onclick = (event) => {
+                    // Don't load conversation if clicking on action buttons
+                    if (!event.target.matches('button')) {
+                        loadConversation(conv);
+                    }
+                };
 
                 // Determine the marker based on conversation type
                 let marker = '';
@@ -505,6 +607,10 @@ class ViewerGenerator:
                             `<div class="meta-line"><span class="meta-label">Last:</span> ${formatDateTime(lastDate)}</div>`
                             : ''
                         }
+                    </div>
+                    <div class="conversation-actions">
+                        <button onclick="toggleHideConversation('${conv.session_id}')">${isHidden ? 'SHOW' : 'HIDE'}</button>
+                        <button onclick="exportConversation('${conv.session_id}')">EXPORT</button>
                     </div>
                 `;
 
@@ -895,6 +1001,328 @@ class ViewerGenerator:
             document.getElementById('focusedModeBtn').classList.remove('active');
             if (currentConversation) {
                 displayMessages();
+            }
+        });
+
+        // Hide/Show functionality
+        function toggleHideConversation(sessionId) {
+            if (hiddenConversations.has(sessionId)) {
+                hiddenConversations.delete(sessionId);
+            } else {
+                hiddenConversations.add(sessionId);
+            }
+            hasUnsavedChanges = true;
+            updateSaveButton();
+            displayConversationList();
+        }
+
+        function toggleShowSnapshots() {
+            showSnapshots = !showSnapshots;
+            const btn = document.getElementById('showSnapshotsBtn');
+            if (showSnapshots) {
+                btn.classList.add('active');
+                btn.textContent = 'All';
+            } else {
+                btn.classList.remove('active');
+                btn.textContent = 'Snapshots';
+            }
+            displayConversationList();
+        }
+
+        function toggleShowHidden() {
+            showHidden = !showHidden;
+            const btn = document.getElementById('showHiddenBtn');
+            if (showHidden) {
+                btn.classList.add('active');
+                btn.textContent = 'All';
+            } else {
+                btn.classList.remove('active');
+                btn.textContent = 'Hidden';
+            }
+            displayConversationList();
+        }
+
+        function updateSaveButton() {
+            const btn = document.getElementById('saveChangesBtn');
+            if (hasUnsavedChanges) {
+                btn.classList.add('active');
+                btn.textContent = 'SAVE*';
+            } else {
+                btn.classList.remove('active');
+                btn.textContent = 'Save';
+            }
+        }
+
+        async function saveChanges() {
+            if (!hasUnsavedChanges) return;
+
+            try {
+                // Update manifest with hidden conversations
+                manifest.hidden_conversations = Array.from(hiddenConversations);
+                manifest.user_metadata = manifest.user_metadata || {};
+                manifest.user_metadata.last_modified = new Date().toISOString();
+
+                // Save updated manifest and repack archive
+                const manifestBlob = new Blob([JSON.stringify(manifest, null, 2)],
+                    { type: 'application/json' });
+                const formData = new FormData();
+                formData.append('manifest', manifestBlob, 'manifest.json');
+
+                // Show saving indicator
+                const saveBtn = document.getElementById('saveChangesBtn');
+                const originalText = saveBtn.textContent;
+                saveBtn.textContent = 'SAVING...';
+                saveBtn.disabled = true;
+
+                const response = await fetch('/api/save-and-repack', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    hasUnsavedChanges = false;
+                    updateSaveButton();
+                    if (result.archive) {
+                        alert(`Changes saved and archive repacked successfully!\\nArchive: ${result.archive}`);
+                    } else {
+                        alert(result.message || 'Changes saved successfully!');
+                    }
+                } else {
+                    const errorResult = await response.json().catch(() => ({}));
+                    throw new Error(errorResult.error || 'Failed to save changes');
+                }
+            } catch (error) {
+                console.error('Save error:', error);
+                alert('Failed to save changes. Changes are preserved in browser session only.');
+            } finally {
+                // Reset save button
+                const saveBtn = document.getElementById('saveChangesBtn');
+                saveBtn.disabled = false;
+                updateSaveButton();
+            }
+        }
+
+        function exportConversation(sessionId) {
+            const conv = manifest.conversations.find(c => c.session_id === sessionId);
+            if (!conv) return;
+
+            // Create markdown export
+            let markdown = `# ${conv.title || 'Conversation'}\\n\\n`;
+            markdown += `**Session ID:** ${conv.session_id}\\n`;
+            markdown += `**Messages:** ${conv.message_count}\\n`;
+            if (conv.first_timestamp) {
+                markdown += `**Started:** ${new Date(conv.first_timestamp).toLocaleString()}\\n`;
+            }
+            if (conv.last_timestamp && conv.last_timestamp !== conv.first_timestamp) {
+                markdown += `**Last Activity:** ${new Date(conv.last_timestamp).toLocaleString()}\\n`;
+            }
+            markdown += `\\n---\\n\\n`;
+
+            // Add conversation messages if currently loaded
+            // Check if this is the currently loaded conversation
+            const isCurrentlyLoaded = currentConversation && 
+                document.querySelector('.conversation-item.active')?.querySelector('.session-id')?.textContent?.includes(conv.session_id.substring(0, 12));
+            
+            if (isCurrentlyLoaded && currentConversation) {
+                // Process conversation entries similar to the viewer display logic
+                let processedEntries = [];
+                let i = 0;
+
+                while (i < currentConversation.length) {
+                    const entry = currentConversation[i];
+
+                    // Handle tool sequences: assistant tool_use -> user tool_result
+                    if (entry.type === 'assistant' && entry.message && Array.isArray(entry.message.content)) {
+                        const hasToolUse = entry.message.content.some(b => b.type === 'tool_use');
+                        const hasText = entry.message.content.some(b => b.type === 'text' && b.text && b.text.trim());
+                        const hasThinking = entry.message.content.some(b => b.type === 'thinking');
+
+                        if (hasToolUse) {
+                            // Collect all tool interactions that follow
+                            const toolSequence = [];
+                            toolSequence.push(entry);
+
+                            // Look ahead for tool results
+                            let j = i + 1;
+                            while (j < currentConversation.length) {
+                                const nextEntry = currentConversation[j];
+                                if (nextEntry.type === 'user' && (nextEntry.toolUseResult ||
+                                    (nextEntry.message && Array.isArray(nextEntry.message.content) &&
+                                     nextEntry.message.content.some(b => b.type === 'tool_result')))) {
+                                    toolSequence.push(nextEntry);
+                                    j++;
+                                } else {
+                                    break;
+                                }
+                            }
+
+                            // If assistant message has text content too, split it
+                            if (hasText || hasThinking) {
+                                // Create a message with just text/thinking
+                                const textEntry = {
+                                    ...entry,
+                                    message: {
+                                        ...entry.message,
+                                        content: entry.message.content.filter(b =>
+                                            b.type === 'text' || b.type === 'thinking'
+                                        )
+                                    }
+                                };
+                                processedEntries.push({type: 'message', data: textEntry});
+
+                                // Create tool group with just tools
+                                const toolEntry = {
+                                    ...entry,
+                                    message: {
+                                        ...entry.message,
+                                        content: entry.message.content.filter(b => b.type === 'tool_use')
+                                    }
+                                };
+                                processedEntries.push({
+                                    type: 'tool_group',
+                                    data: [toolEntry, ...toolSequence.slice(1)]
+                                });
+                            } else {
+                                // Entire sequence is tools
+                                processedEntries.push({type: 'tool_group', data: toolSequence});
+                            }
+
+                            i = j;
+                            continue;
+                        }
+                    }
+
+                    // Skip user messages that only contain tool results
+                    if (entry.type === 'user' && entry.toolUseResult && entry.message) {
+                        const hasUserText = entry.message.content && (
+                            typeof entry.message.content === 'string' ||
+                            (Array.isArray(entry.message.content) &&
+                             entry.message.content.some(b => b.type === 'text' && b.text && b.text.trim()))
+                        );
+                        if (!hasUserText) {
+                            // This is a tool-result-only message, should have been captured above
+                            i++;
+                            continue;
+                        }
+                    }
+
+                    // Regular message
+                    processedEntries.push({type: 'message', data: entry});
+                    i++;
+                }
+
+                // Export based on current view mode
+                processedEntries.forEach(item => {
+                    if (item.type === 'tool_group') {
+                        if (viewMode === 'detailed') {
+                            // Include full tool details in detailed mode
+                            markdown += `\\n## Tool Usage\\n\\n`;
+                            item.data.forEach(entry => {
+                                if (entry.message && Array.isArray(entry.message.content)) {
+                                    entry.message.content.forEach(block => {
+                                        if (block.type === 'tool_use') {
+                                            markdown += `**Tool:** ${block.name || block.tool_name}\\n`;
+                                            markdown += `\\`\\`\\`json\\n${JSON.stringify(block.input || block.tool_input, null, 2)}\\n\\`\\`\\`\\n\\n`;
+                                        } else if (block.type === 'tool_result') {
+                                            const content = typeof block.content === 'string'
+                                                ? block.content
+                                                : JSON.stringify(block.content, null, 2);
+                                            markdown += `**Tool Result:**\\n`;
+                                            markdown += `\\`\\`\\`\\n${content}\\n\\`\\`\\`\\n\\n`;
+                                        }
+                                    });
+                                }
+                            });
+                        } else {
+                            // Focused mode - just summarize tools
+                            let toolCount = 0;
+                            let toolNames = [];
+                            item.data.forEach(entry => {
+                                if (entry.message && Array.isArray(entry.message.content)) {
+                                    entry.message.content.forEach(block => {
+                                        if (block.type === 'tool_use') {
+                                            toolCount++;
+                                            toolNames.push(block.name || block.tool_name || 'Unknown');
+                                        }
+                                    });
+                                }
+                            });
+                            markdown += `\\n*[Used ${toolCount} tool(s): ${toolNames.slice(0, 3).join(', ')}${toolNames.length > 3 ? '...' : ''}]*\\n\\n`;
+                        }
+                    } else {
+                        // Regular message
+                        const entry = item.data;
+                        if (entry.type === 'summary') {
+                            markdown += `## Summary\\n\\n${entry.summary || 'No summary available'}\\n\\n`;
+                        } else if (entry.message) {
+                            const role = entry.message.role || entry.type;
+                            const timestamp = entry.timestamp ?
+                                new Date(entry.timestamp).toLocaleTimeString() : '';
+                            markdown += `### ${role.toUpperCase()} ${timestamp}\\n\\n`;
+
+                            if (typeof entry.message.content === 'string') {
+                                markdown += `${entry.message.content}\\n\\n`;
+                            } else if (Array.isArray(entry.message.content)) {
+                                entry.message.content.forEach(block => {
+                                    if (block.type === 'text') {
+                                        markdown += `${block.text || ''}\\n\\n`;
+                                    } else if (block.type === 'thinking') {
+                                        if (viewMode === 'detailed') {
+                                            markdown += `*[Thinking] ${block.thinking || ''}*\\n\\n`;
+                                        }
+                                        // In focused mode, skip thinking blocks
+                                    }
+                                });
+                            }
+                        }
+                    }
+                });
+            } else {
+                markdown += `*Note: Load this conversation in the viewer to include full message content in export.*\\n\\n`;
+            }
+
+            // Create a safe filename from title and session ID
+            const safeTitle = (conv.title || 'Conversation')
+                .replace(/[^a-zA-Z0-9\s-]/g, '') // Remove special characters
+                .replace(/\s+/g, '_') // Replace spaces with underscores
+                .substring(0, 50); // Limit length
+            const shortSessionId = conv.session_id.substring(0, 8);
+            const filename = `${safeTitle}_${shortSessionId}.md`;
+
+            // Download as file
+            const blob = new Blob([markdown], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // Event listeners
+        document.getElementById('showSnapshotsBtn').addEventListener('click', toggleShowSnapshots);
+        document.getElementById('showHiddenBtn').addEventListener('click', toggleShowHidden);
+        document.getElementById('saveChangesBtn').addEventListener('click', saveChanges);
+        document.getElementById('exportBtn').addEventListener('click', () => {
+            const activeItem = document.querySelector('.conversation-item.active');
+            if (activeItem && currentConversation) {
+                // Extract session ID from the active conversation item
+                const sessionIdElement = activeItem.querySelector('.session-id');
+                if (sessionIdElement) {
+                    const sessionIdText = sessionIdElement.textContent;
+                    // Find the full session ID from manifest
+                    const conv = manifest.conversations.find(c => 
+                        sessionIdText.includes(c.session_id.substring(0, 12))
+                    );
+                    if (conv) {
+                        exportConversation(conv.session_id);
+                    }
+                }
+            } else {
+                alert('Please select a conversation first');
             }
         });
 

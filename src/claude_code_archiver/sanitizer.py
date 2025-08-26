@@ -53,15 +53,15 @@ class Sanitizer:
             ),
             SanitizationPattern(
                 name="generic_api_key",
-                pattern=r'api[_-]?key["\s:=]+["\'`]?([a-zA-Z0-9-_]{20,})["\']?',
-                replacement="[REDACTED_API_KEY]",
-                description="Generic API key pattern",
+                pattern=r'(?:api[_-]?key|apikey)["\'`]?\s*[:=]\s*["\'`]([a-zA-Z0-9-_]{20,})["\'`]',
+                replacement="api_key=[REDACTED_API_KEY]",
+                description="Generic API key pattern (quoted values only)",
             ),
             SanitizationPattern(
                 name="bearer_token",
-                pattern=r"Bearer\s+[a-zA-Z0-9-._~+/]+=*",
-                replacement="Bearer [REDACTED_TOKEN]",
-                description="Bearer authentication token",
+                pattern=r'(?:Authorization|authorization)["\'`]?\s*[:=]\s*["\'`]?Bearer\s+([a-zA-Z0-9-._~+/]{20,}=*)["\'`]?',
+                replacement="Authorization: Bearer [REDACTED_TOKEN]",
+                description="Bearer authentication token (in Authorization header)",
             ),
             SanitizationPattern(
                 name="aws_access_key",
@@ -71,9 +71,9 @@ class Sanitizer:
             ),
             SanitizationPattern(
                 name="aws_secret_key",
-                pattern=r"[a-zA-Z0-9/+=]{40}",
-                replacement="[REDACTED_AWS_SECRET_KEY]",
-                description="AWS Secret Key (context-dependent)",
+                pattern=r'(?:AWS_SECRET_ACCESS_KEY|aws[_-]?secret[_-]?key)["\'`]?\s*[:=]\s*["\'`]?[a-zA-Z0-9/+=]{40}["\'`]?',
+                replacement="AWS_SECRET_ACCESS_KEY=[REDACTED_AWS_SECRET_KEY]",
+                description="AWS Secret Key (with context)",
             ),
             SanitizationPattern(
                 name="github_token",
@@ -95,9 +95,9 @@ class Sanitizer:
             ),
             SanitizationPattern(
                 name="env_secret",
-                pattern=r"(SECRET|TOKEN|KEY|PASSWORD|PASSWD|PWD)[\"\s:=]+[\"\'`]?([a-zA-Z0-9-_/.]{8,})[\"\']?",
+                pattern=r'(?:^|[\s;])([A-Z_]+(?:SECRET|TOKEN|KEY|PASSWORD|PASSWD|PWD)[A-Z_]*)["\'`]?\s*=\s*["\'`]?([a-zA-Z0-9-_/.]{8,})["\'`]?(?:\s|$)',
                 replacement=r"\1=[REDACTED]",
-                description="Environment variables with sensitive names",
+                description="Environment variables with sensitive names (uppercase only)",
             ),
         ]
 

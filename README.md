@@ -1,234 +1,143 @@
 # Claude Code Archiver
 
-Archive, analyze, and view Claude Code conversations with advanced metadata and intelligent conversation detection.
-
-## Features
-
-- 📦 **Archive conversations** from any Claude Code project
-- 🔒 **Automatic sanitization** of sensitive data (API keys, tokens, passwords)
-- 🧠 **Intelligent conversation detection** - distinguishes auto-linked vs. true continuations
-- 📝 **Smart title extraction** from first user message with intelligent text processing
-- 🔗 **Advanced continuation chain tracking** - handles compaction, snapshots, and complex relationships
-- 📊 **Rich statistics and metadata** - message counts, timestamps, tool usage, conversation duration
-- 🎯 **Enhanced viewer** with conversation titles, timing info, and snapshot filtering
-- ✅ **Todo integration** - includes TodoWrite history from ~/.claude/todos/
-- 🎯 **Simple usage** via `uvx` - no installation required
+Archive, view, and manage your Claude Code conversations with an interactive viewer and smart curation features.
 
 ## Quick Start
 
-### Running from Repository (Development)
-
-If you want to run the archiver directly from the repository:
+Archive conversations from any Claude Code project using `uvx` - no installation required:
 
 ```bash
-# Clone the repository
-git clone https://github.com/robotdad/claude-code-archiver.git
-cd claude-code-archiver
-
-# Install dependencies with uv
-uv sync
-
-# Run the archiver using uv run
-uv run claude-code-archiver /path/to/your/project
-
-# With options
-uv run claude-code-archiver /path/to/project --output /path/to/archives
-uv run claude-code-archiver /path/to/project --no-sanitize
-uv run claude-code-archiver /path/to/project --list-only
-```
-
-### Using uvx (Recommended)
-
-Run directly from GitHub without cloning or installation:
-
-```bash
-# Archive a project's conversations
+# Basic usage - archive a project's conversations
 uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/your/project
 
-# Archive with custom output location  
-uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project --output /path/to/archives
-
-# Include snapshots (hidden by default)
-uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project --include-snapshots
-
-# Skip sanitization (keeps sensitive data)
-uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project --no-sanitize
-
-# Exclude todo files
-uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project --no-todos
-
-# Just list conversations without archiving
-uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project --list-only
+# Refresh an existing archive with new conversations (auto-detects project paths)
+uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver --refresh /path/to/archive.zip
 ```
 
-### Using uvx (After Publishing to PyPI)
+## View Your Archive
 
-Once published to PyPI, you can use the shorter form:
+After creating an archive:
 
 ```bash
-# Archive a project's conversations
-uvx claude-code-archiver /path/to/your/project
+# Extract and start the interactive viewer
+unzip your-archive.zip && cd your-archive-folder
+python serve.py
+```
+
+This opens an interactive web viewer at `http://localhost:8000` where you can:
+- Browse conversations with smart titles and metadata
+- Hide/unhide conversations to curate your collection  
+- Export individual conversations as clean Markdown
+- Switch between focused and detailed view modes
+- Save changes back to the original ZIP archive
+
+## Core Features
+
+- 🎯 **One-command archiving** via `uvx` - no installation needed
+- 🔒 **Automatic sanitization** of sensitive data (API keys, tokens, passwords)  
+- 📝 **Smart conversation titles** extracted from your first message
+- 🛠️ **Interactive curation** - hide unsuccessful conversations, organize your collection
+- 📄 **Clean exports** - focused summaries or detailed technical records
+- 🔄 **Smart refresh** - add new conversations while preserving your customizations
+- 🧠 **Intelligent detection** - distinguishes true continuations from auto-linked conversations
+
+## Common Options
+
+```bash
+# Archive with custom output location
+uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project --output /path/to/archives
+
+# Include snapshot files (excluded by default for cleaner results)
+uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project --include-snapshots
+
+# Skip sensitive data sanitization (not recommended)
+uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project --no-sanitize
+
+# Just list conversations without creating archive
+uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project --list-only
 ```
 
 ## How It Works
 
-Claude Code stores conversations in `~/.claude/projects/` as JSONL files. This tool:
+Claude Code stores conversations in `~/.claude/projects/` as JSONL files. The archiver:
 
-1. **Discovers** all conversations for your project
-2. **Analyzes** conversation types (snapshots, continuations, auto-linked conversations)
-3. **Extracts** intelligent titles from first meaningful user messages  
-4. **Collects** todo files from `~/.claude/todos/` for workflow tracking
-5. **Parses** the JSONL files to extract messages, metadata, and statistics
-6. **Sanitizes** sensitive information (optional but recommended)
-7. **Archives** everything into a ZIP file with enhanced manifest and interactive viewer
+1. **Discovers** conversations for your project by mapping project paths to Claude's folder structure
+2. **Extracts** meaningful titles from your first message in each conversation
+3. **Sanitizes** sensitive data like API keys and passwords (enabled by default)
+4. **Creates** an interactive ZIP archive with viewer and all conversation data
+5. **Preserves** your customizations when refreshing with new conversations
 
 ### Project Path Mapping
+Claude Code converts your project path into a folder name:
+- Project: `/Users/name/Source/my-project` 
+- Claude folder: `~/.claude/projects/-Users-name-Source-my-project`
 
-Claude Code converts your project path into a folder name by replacing `/` with `-`. For example:
-- Project: `/Users/robotdad/Source/my-project`
-- Claude folder: `~/.claude/projects/-Users-robotdad-Source-my-project`
+## Advanced Features
 
-## Viewing Archives
-
-After creating an archive, extract it and use the included server:
+### Project Aliases
+Include conversations from renamed or moved projects:
 
 ```bash
-# Extract the archive
-unzip claude-convos-projectname-*.zip
+# Include conversations from old project names
+uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/current-project --alias /path/to/old-name
 
-# Navigate to the extracted folder
-cd claude-convos-projectname-*
-
-# Start the viewer server
-python serve.py
+# Use wildcards to include multiple related projects  
+uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/amplifier --alias "/path/to/amplifier*"
 ```
 
-This will automatically:
-- 🚀 Start a local web server at `http://localhost:8000`
-- 🌐 Open the interactive viewer in your browser
-- 📋 Show all conversations with enhanced metadata:
-  - **Conversation titles** extracted from first user messages
-  - **Start and end timestamps** with duration information
-  - **Message counts** and conversation statistics
-  - **Continuation markers** for true continuations (not auto-linked)
-  - **Snapshot filtering** - snapshots hidden by default with toggle button
-  - **Todo integration** when available
+### Archive Management
+```bash
+# Refresh archive with new conversations (preserves your curation)
+uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver --refresh /path/to/archive.zip
 
-### Viewer Features
-
-- **Enhanced Conversation List**: Shows titles, timestamps, and metadata
-- **Smart Continuation Detection**: Only marks true continuations, not auto-linked conversations  
-- **Snapshot Management**: Hide intermediate snapshots by default, toggle to show all
-- **Comprehensive Metadata**: Creation time, last modified, duration, message counts
-- **Interactive Display**: Click any conversation to view full message history
-
-Press `Ctrl+C` to stop the server when done.
-
-## Archive Structure
-
-The generated archive contains:
-
-```
-claude-convos-projectname-20250101_120000.zip
-├── viewer.html                   # Interactive conversation viewer with enhanced UI
-├── serve.py                      # Python web server (serves viewer at root path)
-├── manifest.json                 # Enhanced metadata and conversation index
-├── conversations/
-│   ├── session-id-1.jsonl       # Sanitized conversation files
-│   ├── session-id-2.jsonl       # (snapshots excluded by default)
-│   └── ...
-├── todos/                        # Todo files from ~/.claude/todos/
-│   ├── session-id-1.json        # TodoWrite history for conversations
-│   └── ...
+# Add new project aliases to existing archive
+uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver --refresh /path/to/archive.zip --alias /path/to/new-branch
 ```
 
-### Enhanced Manifest Contents
+### Interactive Viewer Features
 
-The `manifest.json` now includes:
-- Project path, creation timestamp, and conversation count
-- **Conversation titles** extracted from first user messages
-- **Conversation types**: `original`, `pre_compaction`, `post_compaction`, `auto_linked`, `snapshot`
-- **Enhanced metadata**: first/last timestamps, message counts, duration
-- **Continuation chains** with smart detection (true continuations vs auto-linked)
-- **Display preferences**: which conversations to show by default
-- **Sanitization statistics** (if sanitization was performed)
-- **Detailed tool usage statistics** per conversation
-- **Todo integration metadata** when available
+The web viewer includes:
+- **Conversation curation**: Hide unsuccessful attempts, organize your collection
+- **Export modes**: Focused summaries or detailed technical records  
+- **Persistent storage**: Save your preferences back to the ZIP archive
+- **Smart display**: Tool interactions collapsed by default, snapshots hidden
+- **View modes**: Switch between clean reading and full technical details
 
-## Sanitization
+## Data Safety
 
-By default, the archiver removes sensitive information including:
-
-- OpenAI API keys (`sk-...`)
-- Anthropic API keys (`sk-ant-...`)
-- GitHub tokens (`ghp_...`, `ghs_...`)
-- JWT tokens
-- Bearer tokens
+**Automatic Sanitization** (enabled by default) attempts to remove common sensitive patterns:
+- API keys with clear context (OpenAI `sk-...`, Anthropic `sk-ant-...`, GitHub `ghp_/ghs_...`)
+- Bearer tokens in Authorization headers
 - Database connection strings with passwords
-- Environment variables with sensitive names (SECRET, TOKEN, KEY, PASSWORD)
-- AWS credentials
+- Environment variables with sensitive names (uppercase only)
+- JWT tokens
 
-Sanitized content is replaced with descriptive placeholders like `[REDACTED_API_KEY]`.
+**Important:** Sanitization is a courtesy feature, not a security guarantee. It cannot catch all possible sensitive data. If you've accidentally included secrets in conversations, consider them potentially compromised. Review your archives and regenerate any exposed credentials.
 
-## Advanced Conversation Detection
-
-Claude Code handles long conversations in sophisticated ways. The archiver provides intelligent detection of:
-
-### Conversation Types
-
-- **Original**: Standalone conversations with no continuation relationships
-- **Snapshots**: Intermediate saves during long conversations (hidden by default)
-- **Pre-compaction**: Complete conversations before Claude Code compaction
-- **Post-compaction**: True continuations after compaction with detailed context
-- **Auto-linked**: New conversations automatically linked to previous ones in the same project
-
-### Smart Continuation Detection  
-
-The archiver distinguishes between:
-- **True continuations**: Actually continue previous conversations (marked with `[CONTINUATION]`)
-- **Auto-linked conversations**: New topics that Claude Code automatically links for project context (no marker)
-
-### Detection Methods
-
-- **Compaction detection**: Identifies `isCompactSummary` markers for true continuations
-- **UUID chain tracking**: Maps `leafUuid` relationships between conversations  
-- **Title analysis**: Extracts meaningful titles from first user messages
-- **Snapshot identification**: Uses UUID overlap analysis to identify intermediate saves
-- **Internal compaction detection**: Handles compaction events within the same file
-
-## Command Line Options
+## Command Reference
 
 ```bash
-claude-code-archiver PROJECT_PATH [OPTIONS]
+claude-code-archiver [PROJECT_PATH] [OPTIONS]
 ```
 
-### Arguments
-- `PROJECT_PATH`: Path to the project directory to archive
-
-### Options
-- `--output, -o PATH`: Output directory for archive (default: current directory)
-- `--no-sanitize`: Skip sanitization of sensitive data
-- `--name, -n NAME`: Custom archive name (without extension)
-- `--include-snapshots`: Include intermediate conversation snapshots (hidden by default)
-- `--no-todos`: Exclude todo files from archive (included by default)
+### Common Options
+- `--refresh, -r PATH`: Refresh existing archive (PROJECT_PATH optional when using this)
+- `--alias, -a TEXT`: Include conversations from additional project paths (supports wildcards)
+- `--output, -o PATH`: Custom output directory
+- `--include-snapshots`: Include snapshot files (hidden by default)
+- `--no-sanitize`: Skip sanitization (not recommended)
 - `--list-only, -l`: List conversations without creating archive
-- `--version`: Show version information
-- `--help`: Show help message
 
-### Example Usage
-
+### Examples
 ```bash
-# Basic archive with all defaults (snapshots hidden, todos included)
+# Basic usage
 uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project
 
-# Include everything including snapshots
-uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project --include-snapshots
+# With project aliases  
+uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/current-project --alias /path/to/old-name --alias "/path/to/experiments*"
 
-# Archive without todo files
-uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project --no-todos
-
-# Custom output location and name
-uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver /path/to/project --output /archives --name my-project-convos
+# Refresh existing archive
+uvx --from git+https://github.com/robotdad/claude-code-archiver claude-code-archiver --refresh /path/to/archive.zip
 ```
 
 ## Development
