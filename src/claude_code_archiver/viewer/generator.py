@@ -113,19 +113,46 @@ class ViewerGenerator:
             border-left: 3px solid #ffb000;
         }
 
+        .conversation-item .conversation-header {
+            margin-bottom: 8px;
+        }
+
         .conversation-item .session-id {
             color: #00ff00;
             font-weight: bold;
+            font-size: 11px;
         }
 
-        .conversation-item .meta {
+        .conversation-item .conversation-title {
+            color: #fff;
+            font-weight: normal;
+            margin-top: 3px;
+            font-size: 13px;
+            line-height: 1.3;
+        }
+
+        .conversation-item .conversation-meta {
             color: #888;
-            font-size: 12px;
-            margin-top: 5px;
+            font-size: 11px;
+        }
+
+        .conversation-item .meta-line {
+            margin-bottom: 2px;
+        }
+
+        .conversation-item .meta-label {
+            color: #666;
+            font-weight: bold;
         }
 
         .conversation-item .continuation-marker {
             color: #ffb000;
+            font-size: 10px;
+        }
+
+        .conversation-item .snapshot-marker {
+            color: #888;
+            font-size: 10px;
         }
 
         /* Conversation View */
@@ -142,6 +169,19 @@ class ViewerGenerator:
             background: #1a1a1a;
             padding: 10px;
             border-bottom: 1px solid #00ff00;
+        }
+
+        .view-title-main {
+            font-size: 16px;
+            color: #fff;
+            margin-bottom: 4px;
+            font-weight: bold;
+        }
+
+        .view-title-meta {
+            font-size: 12px;
+            color: #888;
+            font-weight: normal;
         }
 
         .view-controls {
@@ -426,11 +466,45 @@ class ViewerGenerator:
                 }
                 // Note: auto_linked and auto_linked_with_internal_compaction get no marker
 
+                // Format timestamps
+                const firstDate = conv.first_timestamp ? new Date(conv.first_timestamp) : null;
+                const lastDate = conv.last_timestamp ? new Date(conv.last_timestamp) : null;
+
+                const formatDateTime = (date) => {
+                    if (!date) return 'Unknown';
+                    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                };
+
+                // Create duration display if we have both dates
+                let durationText = '';
+                if (firstDate && lastDate && firstDate.getTime() !== lastDate.getTime()) {
+                    const durationMs = lastDate.getTime() - firstDate.getTime();
+                    const hours = Math.floor(durationMs / (1000 * 60 * 60));
+                    const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+                    if (hours > 0) {
+                        durationText = ` (${hours}h ${minutes}m)`;
+                    } else if (minutes > 0) {
+                        durationText = ` (${minutes}m)`;
+                    }
+                }
+
                 item.innerHTML = `
-                    <div class="session-id">${marker}${conv.session_id.substring(0, 12)}...</div>
-                    <div class="meta">
-                        Messages: ${conv.message_count} |
-                        ${conv.first_timestamp ? new Date(conv.first_timestamp).toLocaleDateString() : 'Unknown date'}
+                    <div class="conversation-header">
+                        <div class="session-id">${marker}${conv.session_id.substring(0, 12)}...</div>
+                        <div class="conversation-title">${conv.title || 'Conversation'}</div>
+                    </div>
+                    <div class="conversation-meta">
+                        <div class="meta-line">
+                            <span class="meta-label">Messages:</span> ${conv.message_count}
+                            ${durationText}
+                        </div>
+                        <div class="meta-line">
+                            <span class="meta-label">Started:</span> ${formatDateTime(firstDate)}
+                        </div>
+                        ${lastDate && firstDate && lastDate.getTime() !== firstDate.getTime() ?
+                            `<div class="meta-line"><span class="meta-label">Last:</span> ${formatDateTime(lastDate)}</div>`
+                            : ''
+                        }
                     </div>
                 `;
 
@@ -445,9 +519,29 @@ class ViewerGenerator:
             });
             event.currentTarget.classList.add('active');
 
-            // No need to add active class anymore - always visible
-            document.getElementById('viewTitle').textContent =
-                `[SESSION: ${convInfo.session_id}] - ${convInfo.message_count} messages`;
+            // Update view title with enhanced metadata
+            const firstDate = convInfo.first_timestamp ? new Date(convInfo.first_timestamp) : null;
+            const lastDate = convInfo.last_timestamp ? new Date(convInfo.last_timestamp) : null;
+
+            const formatDateTime = (date) => {
+                if (!date) return 'Unknown';
+                return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            };
+
+            let titleText = `${convInfo.title || 'Conversation'}`;
+            let metaText = `${convInfo.message_count} messages`;
+
+            if (firstDate) {
+                metaText += ` • Started: ${formatDateTime(firstDate)}`;
+                if (lastDate && lastDate.getTime() !== firstDate.getTime()) {
+                    metaText += ` • Last: ${formatDateTime(lastDate)}`;
+                }
+            }
+
+            document.getElementById('viewTitle').innerHTML = `
+                <div class="view-title-main">${titleText}</div>
+                <div class="view-title-meta">[${convInfo.session_id.substring(0, 12)}...] ${metaText}</div>
+            `;
 
             const messagesContainer = document.getElementById('messages');
             messagesContainer.innerHTML = '<div class="loading">Loading conversation...</div>';

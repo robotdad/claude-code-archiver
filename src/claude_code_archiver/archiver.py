@@ -126,10 +126,14 @@ class Archiver:
                 stats = self.parser.extract_statistics(entries)
                 total_messages += stats["total_messages"]
 
+                # Extract conversation title from first meaningful user message
+                conversation_title = self._extract_conversation_title(output_file)
+
                 # Add to manifest with proper conversation type tagging
                 manifest_conv = {
                     "session_id": conv.session_id,
                     "file": f"conversations/{output_filename}",
+                    "title": conversation_title,
                     "message_count": conv.message_count,
                     "first_timestamp": conv.first_timestamp,
                     "last_timestamp": conv.last_timestamp,
@@ -315,6 +319,77 @@ class Archiver:
         except (OSError, json.JSONDecodeError):
             pass
         return False
+
+    def _extract_conversation_title(self, file_path: Path) -> str:
+        """Extract a meaningful title from the conversation.
+
+        Looks for the first substantial user message and creates a title from it.
+
+        Args:
+            file_path: Path to the conversation file
+
+        Returns:
+            A short descriptive title for the conversation
+        """
+        try:
+            with open(file_path, encoding="utf-8") as f:
+                for line in f:
+                    data = json.loads(line)
+
+                    # Skip summary messages
+                    if data.get("type") == "summary":
+                        continue
+
+                    # Look for user messages
+                    if data.get("type") == "user":
+                        message = data.get("message", {})
+                        content = message.get("content", "")
+
+                        # Handle both string and array content formats
+                        if isinstance(content, list):
+                            text_parts: list[str] = []
+                            for item in content:  # type: ignore
+                                if isinstance(item, dict) and item.get("type") == "text":  # type: ignore
+                                    text_content = item.get("text", "")  # type: ignore
+                                    if isinstance(text_content, str):
+                                        text_parts.append(text_content)
+                            text = " ".join(text_parts)
+                        else:
+                            text = str(content)
+
+                        # Clean and truncate the text
+                        text = text.strip()
+                        if text:
+                            # Remove common prefixes
+                            prefixes_to_remove = [
+                                "I want you to",
+                                "Please help me",
+                                "Can you help me",
+                                "Help me",
+                                "I need help with",
+                                "I need you to",
+                            ]
+
+                            text_lower = text.lower()
+                            for prefix in prefixes_to_remove:
+                                if text_lower.startswith(prefix.lower()):
+                                    text = text[len(prefix) :].strip()
+                                    break
+
+                            # Capitalize first letter
+                            if text:
+                                text = text[0].upper() + text[1:]
+
+                            # Truncate to reasonable length
+                            if len(text) > 80:
+                                text = text[:77] + "..."
+
+                            return text or "Conversation"
+
+        except (OSError, json.JSONDecodeError):
+            pass
+
+        return "Conversation"
 
     def _collect_todo_files(self, conversations: list[ConversationFile], todos_dir: Path) -> dict[str, dict[str, Any]]:
         """Collect todo files for the conversations.
