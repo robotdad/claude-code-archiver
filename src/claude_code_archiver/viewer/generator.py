@@ -320,6 +320,7 @@ class ViewerGenerator:
 
         .message.assistant .message-prefix { color: #ffffff; }
         .message.assistant .message-prefix::before { content: "●"; }
+        .message.assistant .message-content { color: #ffffff; }
 
         .message.thinking .message-prefix { color: #666666; }
         .message.thinking .message-prefix::before { content: "*"; }
@@ -362,6 +363,7 @@ class ViewerGenerator:
             font-style: italic;
             cursor: pointer;
             user-select: none;
+            display: inline;
         }
 
         .thinking-indicator:hover {
@@ -371,8 +373,8 @@ class ViewerGenerator:
         .thinking-content {
             color: #666666;
             font-style: italic;
-            margin-left: 32px;
-            padding: 8px 0;
+            margin-top: 4px;
+            padding: 4px 0;
             display: none;
         }
 
@@ -441,31 +443,11 @@ class ViewerGenerator:
             margin: 8px 0;
         }
 
-        .tool-group-header {
-            display: flex;
-            align-items: center;
-            cursor: pointer;
-            user-select: none;
-            padding: 2px 0;
-        }
-
-        .tool-group-header .message-prefix {
-            color: #00ff00;
-        }
-
-        .tool-group-header .message-prefix::before {
-            content: "●";
-        }
-
-        .tool-group-summary {
-            color: #00ff00;
-            margin-left: 8px;
-        }
-
-        .tool-group-count {
+        .tool-indicator {
             color: #666666;
             font-size: 0.9em;
-            margin-left: 8px;
+            display: inline-block;
+            width: 12px;
         }
 
         .tool-group-content {
@@ -474,10 +456,6 @@ class ViewerGenerator:
             border-left: 1px dashed #333;
             padding-left: 12px;
             display: none;
-        }
-
-        .tool-group.expanded .tool-group-content {
-            display: block;
         }
 
         .tool-message {
@@ -564,6 +542,38 @@ class ViewerGenerator:
             margin: 0;
             white-space: pre-wrap;
             word-wrap: break-word;
+        }
+
+        /* Markdown elements */
+        .message-content code {
+            background: #1a1a1a;
+            padding: 2px 4px;
+            border-radius: 3px;
+            color: #ffb000;
+            font-size: 0.9em;
+        }
+
+        .message-content pre {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+
+        .message-content pre code {
+            background: none;
+            padding: 0;
+            color: #00ff00;
+        }
+
+        .message-content a {
+            color: #00aaff;
+            text-decoration: underline;
+        }
+
+        .message-content a:hover {
+            color: #00ddff;
         }
 
         /* Loading */
@@ -838,32 +848,14 @@ class ViewerGenerator:
                     continue;
                 }
 
-                // Handle tool sequences: assistant tool_use -> user tool_result
+                // Handle tool sequences - group consecutive tool operations
                 if (entry.type === 'assistant' && entry.message && Array.isArray(entry.message.content)) {
                     const hasToolUse = entry.message.content.some(b => b.type === 'tool_use');
                     const hasText = entry.message.content.some(b => b.type === 'text' && b.text && b.text.trim());
                     const hasThinking = entry.message.content.some(b => b.type === 'thinking');
 
                     if (hasToolUse) {
-                        // Collect all tool interactions that follow
-                        const toolSequence = [];
-                        toolSequence.push(entry);
-
-                        // Look ahead for tool results
-                        let j = i + 1;
-                        while (j < currentConversation.length) {
-                            const nextEntry = currentConversation[j];
-                            if (nextEntry.type === 'user' && (nextEntry.toolUseResult ||
-                                (nextEntry.message && Array.isArray(nextEntry.message.content) &&
-                                 nextEntry.message.content.some(b => b.type === 'tool_result')))) {
-                                toolSequence.push(nextEntry);
-                                j++;
-                            } else {
-                                break;
-                            }
-                        }
-
-                        // If assistant message has text content too, split it
+                        // First, handle any text/thinking before tools
                         if (hasText || hasThinking) {
                             // Create a message with just text/thinking
                             const textEntry = {
@@ -876,21 +868,72 @@ class ViewerGenerator:
                                 }
                             };
                             processedEntries.push({type: 'message', data: textEntry});
+                        }
 
-                            // Create tool group with just tools
-                            const toolEntry = {
-                                ...entry,
-                                message: {
-                                    ...entry.message,
-                                    content: entry.message.content.filter(b => b.type === 'tool_use')
+                        // Now collect ALL consecutive tool operations
+                        const toolSequence = [];
+                        let j = i;
+                        
+                        // Keep collecting tool operations until we hit non-tool content
+                        while (j < currentConversation.length) {
+                            const currentEntry = currentConversation[j];
+                            
+                            // Check if this is a tool-related message
+                            let isToolMessage = false;
+                            
+                            if (currentEntry.type === 'assistant' && currentEntry.message && Array.isArray(currentEntry.message.content)) {
+                                const hasTools = currentEntry.message.content.some(b => b.type === 'tool_use');
+                                
+                                if (hasTools) {
+                                    if (j === i) {
+                                        // First entry - we already split out text/thinking, just get tools
+                                        const toolEntry = {
+                                            ...currentEntry,
+                                            message: {
+                                                ...currentEntry.message,
+                                                content: currentEntry.message.content.filter(b => b.type === 'tool_use')
+                                            }
+                                        };
+                                        toolSequence.push(toolEntry);
+                                        isToolMessage = true;
+                                    } else {
+                                        // Subsequent assistant message with tools
+                                        const hasNonToolContent = currentEntry.message.content.some(b => 
+                                            (b.type === 'text' && b.text && b.text.trim()) || b.type === 'thinking'
+                                        );
+                                        
+                                        if (!hasNonToolContent) {
+                                            // Pure tool message, add it
+                                            toolSequence.push(currentEntry);
+                                            isToolMessage = true;
+                                        } else {
+                                            // Has text/thinking too, stop here
+                                            break;
+                                        }
+                                    }
                                 }
-                            };
-                            processedEntries.push({
-                                type: 'tool_group',
-                                data: [toolEntry, ...toolSequence.slice(1)]
-                            });
-                        } else {
-                            // Entire sequence is tools
+                            } else if (currentEntry.type === 'user' && (currentEntry.toolUseResult ||
+                                (currentEntry.message && Array.isArray(currentEntry.message.content) &&
+                                 currentEntry.message.content.some(b => b.type === 'tool_result')))) {
+                                // Tool result message
+                                toolSequence.push(currentEntry);
+                                isToolMessage = true;
+                            }
+                            
+                            if (isToolMessage) {
+                                j++;
+                            } else {
+                                // Not a tool message, stop
+                                if (j === i) {
+                                    // Edge case: no tools found in first message, shouldn't happen
+                                    j++;
+                                }
+                                break;
+                            }
+                        }
+
+                        // Add the tool group if we collected any tools
+                        if (toolSequence.length > 0) {
                             processedEntries.push({type: 'tool_group', data: toolSequence});
                         }
 
@@ -948,30 +991,23 @@ class ViewerGenerator:
 
             const isExpanded = viewMode === 'detailed';
 
-            // Create collapsible header
+            // Create collapsible header with proper alignment
             const headerDiv = document.createElement('div');
-            headerDiv.className = `tool-group-header ${isExpanded ? 'expanded' : ''}`;
+            headerDiv.className = 'message tool';
             headerDiv.innerHTML = `
-                <span class="tool-indicator">▶</span>
-                [TOOLS: ${toolCount}] ${toolNames.slice(0, 3).join(', ')}${toolNames.length > 3 ? '...' : ''}
+                <span class="message-prefix"></span>
+                <span class="message-content">
+                    <span style="cursor: pointer; user-select: none;" onclick="toggleToolGroup(this, ${groupIndex})">
+                        <span class="tool-indicator">${isExpanded ? '▼' : '▶'}</span> [TOOLS: ${toolCount}] ${toolNames.slice(0, 3).join(', ')}${toolNames.length > 3 ? '...' : ''}
+                    </span>
+                </span>
             `;
-            headerDiv.onclick = function() {
-                const content = this.nextElementSibling;
-                const indicator = this.querySelector('.tool-indicator');
-                if (content.style.display === 'none' || !content.style.display) {
-                    content.style.display = 'block';
-                    indicator.textContent = '▼';
-                    this.classList.add('expanded');
-                } else {
-                    content.style.display = 'none';
-                    indicator.textContent = '▶';
-                    this.classList.remove('expanded');
-                }
-            };
+            groupDiv.appendChild(headerDiv);
 
-            // Create content div
+            // Create content div with ID for toggling
             const contentDiv = document.createElement('div');
             contentDiv.className = 'tool-group-content';
+            contentDiv.id = `tool-group-${groupIndex}`;
             contentDiv.style.display = isExpanded ? 'block' : 'none';
 
             // Render each tool interaction
@@ -1008,9 +1044,20 @@ class ViewerGenerator:
                 }
             });
 
-            groupDiv.appendChild(headerDiv);
             groupDiv.appendChild(contentDiv);
             container.appendChild(groupDiv);
+        }
+
+        function toggleToolGroup(element, groupIndex) {
+            const content = document.getElementById(`tool-group-${groupIndex}`);
+            const indicator = element.querySelector('.tool-indicator');
+            if (content.style.display === 'none' || !content.style.display) {
+                content.style.display = 'block';
+                indicator.textContent = '▼';
+            } else {
+                content.style.display = 'none';
+                indicator.textContent = '▶';
+            }
         }
 
         function renderMessage(container, entry) {
@@ -1049,12 +1096,12 @@ ${escapeHtml(entry.summary || 'No summary available')}
                     if (thinkingBlock) {
                         const thinkingDiv = document.createElement('div');
                         thinkingDiv.className = 'message thinking';
-                        const isCollapsed = viewMode === 'focused';
+                        const isExpanded = viewMode === 'focused';  // Expanded by default in focused mode
                         thinkingDiv.innerHTML = `
                             <span class="message-prefix"></span>
                             <span class="message-content">
-                                <span class="thinking-indicator" onclick="toggleThinking(this)">Thinking...</span>
-                                <div class="thinking-content${!isCollapsed ? ' expanded' : ''}">${escapeHtml(thinkingBlock.thinking || '')}</div>
+                                <span class="thinking-indicator" onclick="toggleThinking(this)">Thinking</span>
+                                <div class="thinking-content${isExpanded ? ' expanded' : ''}">${escapeHtml(thinkingBlock.thinking || '')}</div>
                             </span>
                         `;
                         container.appendChild(thinkingDiv);
@@ -1099,7 +1146,7 @@ ${escapeHtml(entry.summary || 'No summary available')}
 
                     messageDiv.innerHTML = `
                         <span class="message-prefix"></span>
-                        <span class="message-content">${agentLabel}${escapeHtml(mainContent)}</span>
+                        <span class="message-content">${agentLabel}${renderSimpleMarkdown(mainContent)}</span>
                     `;
                     container.appendChild(messageDiv);
                 }
@@ -1278,6 +1325,33 @@ ${escapeHtml(entry.summary || 'No summary available')}
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        function renderSimpleMarkdown(text) {
+            if (!text) return '';
+
+            // First escape HTML to prevent XSS
+            let html = escapeHtml(text);
+
+            // Code blocks (must be before inline code)
+            html = html.replace(/```([\\s\\S]*?)```/g, '<pre><code>$1</code></pre>');
+
+            // Inline code
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+            // Bold
+            html = html.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+
+            // Italic (but not thinking indicators)
+            html = html.replace(/(?<!\\*)\\*([^*]+)\\*(?!\\*)/g, '<em>$1</em>');
+
+            // Links
+            html = html.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank">$1</a>');
+
+            // Line breaks
+            html = html.replace(/\\n/g, '<br>');
+
+            return html;
         }
 
         // View mode toggles
