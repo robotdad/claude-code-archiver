@@ -1,0 +1,14 @@
+{
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": ["browser-use"],
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "additionalDirectories": [".claude", "~/.claude"],
+    "allow": [
+      "Bash",
+      "mcp__browser-use",
+      "WebFetch"
+    ],
+    "deny": []
+  }
+}

@@ -1,0 +1,67 @@
+[
+  {
+    "content": "Phase 0.1: Extract HTML template from generator.py",
+    "status": "pending",
+    "activeForm": "Extracting HTML template from generator.py"
+  },
+  {
+    "content": "Phase 0.2: Create test harness with sample conversations",
+    "status": "pending",
+    "activeForm": "Creating test harness"
+  },
+  {
+    "content": "Phase 1.1: Fix thinking block display and collapse",
+    "status": "completed",
+    "activeForm": "Fixing thinking block display"
+  },
+  {
+    "content": "Phase 1.2: Fix tool grouping logic in focused mode",
+    "status": "completed",
+    "activeForm": "Fixing tool grouping logic"
+  },
+  {
+    "content": "Phase 1.3: Implement system message grouping",
+    "status": "completed",
+    "activeForm": "Implementing system message grouping"
+  },
+  {
+    "content": "Test Phase 1 changes with SelfServe archive",
+    "status": "completed",
+    "activeForm": "Testing Phase 1 changes"
+  },
+  {
+    "content": "Phase 2.1: Modularize JavaScript into components",
+    "status": "pending",
+    "activeForm": "Modularizing JavaScript"
+  },
+  {
+    "content": "Phase 2.2: Organize and split CSS",
+    "status": "pending",
+    "activeForm": "Organizing CSS"
+  },
+  {
+    "content": "Phase 3.1: Add sidechain conversation linking",
+    "status": "pending",
+    "activeForm": "Adding sidechain conversation linking"
+  },
+  {
+    "content": "Phase 3.2: Implement save/load persistence",
+    "status": "pending",
+    "activeForm": "Implementing save/load persistence"
+  },
+  {
+    "content": "Phase 3.3: Add search and filter functionality",
+    "status": "pending",
+    "activeForm": "Adding search and filter"
+  },
+  {
+    "content": "Phase 4.1: Implement keyboard shortcuts",
+    "status": "pending",
+    "activeForm": "Implementing keyboard shortcuts"
+  },
+  {
+    "content": "Phase 4.2: Improve todo list rendering",
+    "status": "pending",
+    "activeForm": "Improving todo rendering"
+  }
+]

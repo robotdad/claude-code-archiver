@@ -1,0 +1,22 @@
+[
+  {
+    "content": "Debug hanging viewer issue",
+    "status": "completed",
+    "activeForm": "Debugging viewer hang"
+  },
+  {
+    "content": "Fix JavaScript infinite loop or blocking code",
+    "status": "completed",
+    "activeForm": "Fixing blocking code"
+  },
+  {
+    "content": "Test fixed viewer",
+    "status": "completed",
+    "activeForm": "Testing fixed viewer"
+  },
+  {
+    "content": "Await user verification before committing",
+    "status": "in_progress",
+    "activeForm": "Awaiting verification"
+  }
+]
