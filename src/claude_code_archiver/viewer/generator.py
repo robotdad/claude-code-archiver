@@ -381,38 +381,6 @@ class ViewerGenerator:
         .thinking-content.expanded {
             display: block;
         }
-        
-        /* System message grouping */
-        .system-group {
-            margin: 8px 0;
-            border-left: 1px dashed #333;
-            padding-left: 12px;
-        }
-        
-        .system-group.collapsed .system-details {
-            display: none;
-        }
-        
-        .system-summary {
-            color: #444444;
-            cursor: pointer;
-            font-size: 0.9em;
-            padding: 4px 0;
-        }
-        
-        .system-summary:hover {
-            color: #666666;
-        }
-        
-        .system-details {
-            margin-left: 12px;
-            opacity: 0.7;
-        }
-        
-        .system-group .message.system {
-            font-size: 0.85em;
-            opacity: 0.8;
-        }
 
         /* Todo list rendering */
         .todo-list {
@@ -873,27 +841,11 @@ class ViewerGenerator:
             while (i < currentConversation.length) {
                 const entry = currentConversation[i];
 
-                // Handle system message grouping
-                if (entry.type === 'system' || (entry.type === 'user' && isSystemMessage(entry))) {
-                    // Collect consecutive system messages
-                    const systemMessages = [];
-                    let j = i;
-                    
-                    while (j < currentConversation.length) {
-                        const currentEntry = currentConversation[j];
-                        if (currentEntry.type === 'system' || (currentEntry.type === 'user' && isSystemMessage(currentEntry))) {
-                            systemMessages.push(currentEntry);
-                            j++;
-                        } else {
-                            break;
-                        }
-                    }
-                    
-                    if (systemMessages.length > 0) {
-                        processedEntries.push({type: 'system_group', data: systemMessages});
-                        i = j;
-                        continue;
-                    }
+                // In focused mode, skip or collapse system messages
+                if (viewMode === 'focused' && entry.type === 'system') {
+                    // Skip system messages in focused mode
+                    i++;
+                    continue;
                 }
 
                 // Handle tool sequences - group consecutive tool operations
@@ -1013,8 +965,6 @@ class ViewerGenerator:
             processedEntries.forEach((item, index) => {
                 if (item.type === 'tool_group') {
                     renderToolGroup(container, item.data, index);
-                } else if (item.type === 'system_group') {
-                    renderSystemGroup(container, item.data);
                 } else {
                     renderMessage(container, item.data);
                 }
@@ -1146,11 +1096,11 @@ ${escapeHtml(entry.summary || 'No summary available')}
                     if (thinkingBlock) {
                         const thinkingDiv = document.createElement('div');
                         thinkingDiv.className = 'message thinking';
-                        const isExpanded = false;  // Collapsed by default in both modes
+                        const isExpanded = viewMode === 'focused';  // Expanded by default in focused mode
                         thinkingDiv.innerHTML = `
                             <span class="message-prefix"></span>
                             <span class="message-content">
-                                <span class="thinking-indicator" onclick="toggleThinking(this)">Thinking...</span>
+                                <span class="thinking-indicator" onclick="toggleThinking(this)">Thinking</span>
                                 <div class="thinking-content${isExpanded ? ' expanded' : ''}">${escapeHtml(thinkingBlock.thinking || '')}</div>
                             </span>
                         `;
@@ -1219,65 +1169,6 @@ ${escapeHtml(entry.summary || 'No summary available')}
         function toggleThinking(element) {
             const content = element.nextElementSibling;
             content.classList.toggle('expanded');
-        }
-        
-        function isSystemMessage(entry) {
-            // Check if entry is a system-type message
-            if (entry.type === 'system') return true;
-            
-            // Check for system-injected content in user messages
-            if (entry.type === 'user') {
-                const content = entry.message?.content || entry.content;
-                if (typeof content === 'string') {
-                    // Check for system tags and patterns
-                    if (content.includes('<system-reminder>')) return true;
-                    if (content.includes('PostToolUse:') && content.includes('[hook')) return true;
-                    if (content.includes('[System:') || content.includes('[SYSTEM:')) return true;
-                }
-            }
-            
-            return false;
-        }
-        
-        function renderSystemGroup(container, systemMessages) {
-            const viewMode = document.getElementById('viewMode').value;
-            
-            if (viewMode === 'focused') {
-                // In focused mode, show collapsed summary
-                const systemDiv = document.createElement('div');
-                systemDiv.className = 'system-group collapsed';
-                
-                const summaryDiv = document.createElement('div');
-                summaryDiv.className = 'system-summary';
-                summaryDiv.onclick = function() {
-                    systemDiv.classList.toggle('collapsed');
-                };
-                summaryDiv.innerHTML = `
-                    <span class="message-prefix">◆</span>
-                    <span class="message-content">[System: ${systemMessages.length} diagnostic message${systemMessages.length > 1 ? 's' : ''}] (click to expand)</span>
-                `;
-                systemDiv.appendChild(summaryDiv);
-                
-                // Add details div with actual messages
-                const detailsDiv = document.createElement('div');
-                detailsDiv.className = 'system-details';
-                for (const msg of systemMessages) {
-                    renderMessage(detailsDiv, msg, true);
-                }
-                systemDiv.appendChild(detailsDiv);
-                
-                container.appendChild(systemDiv);
-            } else {
-                // In detailed mode, show all system messages but grouped
-                const systemDiv = document.createElement('div');
-                systemDiv.className = 'system-group';
-                
-                for (const msg of systemMessages) {
-                    renderMessage(systemDiv, msg);
-                }
-                
-                container.appendChild(systemDiv);
-            }
         }
 
         function handleTodoWrite(container, entry) {
