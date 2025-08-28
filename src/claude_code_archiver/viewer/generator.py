@@ -1,6 +1,5 @@
 """Generator for terminal-style HTML viewer."""
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -282,140 +281,238 @@ class ViewerGenerator:
             color: #0c0c0c;
         }
 
-        /* Messages */
+        /* Messages - Claude Code Style */
         .messages {
             padding: 20px;
             overflow-y: auto;
             flex: 1;
+            font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Fira Code', 'Consolas', 'Liberation Mono', monospace;
+            line-height: 1.6;
         }
 
         .message {
-            margin-bottom: 20px;
-            padding: 10px;
-            border-left: 3px solid #333;
+            margin: 4px 0;
+            padding: 2px 0;
+            display: flex;
+            align-items: flex-start;
+            border: none;
+            background: transparent;
         }
 
-        .message.user {
-            border-left-color: #00ff00;
-            background: #0a1a0a;
-        }
-
-        .message.assistant {
-            border-left-color: #0088ff;
-            background: #0a0a1a;
-        }
-
-        .message.system {
-            border-left-color: #666;
-            background: #1a1a1a;
-            color: #888;
-        }
-
-        .message.summary {
-            border-left-color: #ffb000;
-            background: #1a1a0a;
-        }
-
-        .message.tool_result {
-            border-left-color: #888;
-            background: #0f0f0f;
-            color: #888;
-        }
-
-        .message-header {
-            margin-bottom: 10px;
-            font-weight: bold;
-            color: #ffb000;
+        .message-prefix {
+            flex-shrink: 0;
+            width: 24px;
+            text-align: center;
+            user-select: none;
+            font-weight: normal;
         }
 
         .message-content {
+            flex: 1;
             white-space: pre-wrap;
             word-wrap: break-word;
+            margin-left: 8px;
         }
 
-        /* Tool groups - collapsed tool sequences */
-        .tool-group {
-            margin: 15px 0;
-            border: 1px solid #333;
-            background: #0a0a0a;
-            border-radius: 4px;
+        /* Claude Code message type prefixes */
+        .message.user .message-prefix { color: #00ff00; }
+        .message.user .message-prefix::before { content: ">"; }
+
+        .message.assistant .message-prefix { color: #ffffff; }
+        .message.assistant .message-prefix::before { content: "●"; }
+
+        .message.thinking .message-prefix { color: #666666; }
+        .message.thinking .message-prefix::before { content: "*"; }
+
+        .message.tool .message-prefix { color: #00ff00; }
+        .message.tool .message-prefix::before { content: "●"; }
+
+        .message.system .message-prefix { color: #444444; }
+        .message.system .message-prefix::before { content: "◆"; }
+
+        .message.agent .message-prefix { color: #8b5cf6; }
+        .message.agent .message-prefix::before { content: "🤖"; font-size: 1.2em; }
+
+        .message.summary .message-prefix { color: #ffb000; }
+        .message.summary .message-prefix::before { content: "📋"; }
+
+        .message.tool_result .message-prefix { color: #666666; }
+        .message.tool_result .message-prefix::before { content: "↳"; }
+
+        /* Message content styling */
+        .message.system {
+            opacity: 0.7;
+            font-size: 0.9em;
         }
 
-        .tool-group-header {
-            padding: 10px 15px;
-            background: #151515;
-            color: #888;
+        .message.thinking .message-content {
+            color: #666666;
+            font-style: italic;
+        }
+
+        .message.agent {
+            background: rgba(139, 92, 246, 0.05);
+            border-left: 2px solid #8b5cf6;
+            padding-left: 4px;
+        }
+
+        /* Thinking block special handling */
+        .thinking-indicator {
+            color: #666666;
+            font-style: italic;
             cursor: pointer;
-            font-size: 13px;
-            font-weight: bold;
-            transition: background 0.2s;
+            user-select: none;
         }
 
-        .tool-group-header:hover {
-            background: #1a1a1a;
+        .thinking-indicator:hover {
+            color: #888888;
         }
 
-        .tool-group-header .tool-indicator {
-            display: inline-block;
-            width: 15px;
-            transition: transform 0.2s;
-        }
-
-        .tool-group-header.expanded .tool-indicator {
-            transform: rotate(90deg);
-        }
-
-        .tool-group-content {
-            border-top: 1px solid #333;
-            padding: 10px;
-            background: #0f0f0f;
-        }
-
-        .tool-message {
-            margin: 5px 0;
-            border-left-width: 2px;
-        }
-
-        /* Tool blocks */
-        .tool-block {
-            margin: 10px 0;
-            border: 1px solid #444;
-            background: #1a1a1a;
-        }
-
-        .tool-header {
-            padding: 5px 10px;
-            background: #222;
-            color: #ffb000;
-            cursor: pointer;
-            font-size: 12px;
-        }
-
-        .tool-header:before {
-            content: "▶ ";
-        }
-
-        .tool-header.expanded:before {
-            content: "▼ ";
-        }
-
-        .tool-content {
-            padding: 10px;
+        .thinking-content {
+            color: #666666;
+            font-style: italic;
+            margin-left: 32px;
+            padding: 8px 0;
             display: none;
-            font-size: 12px;
-            color: #888;
-            max-height: 300px;
-            overflow-y: auto;
         }
 
-        .tool-content.expanded {
+        .thinking-content.expanded {
             display: block;
         }
 
-        .tool-result {
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid #333;
+        /* Todo list rendering */
+        .todo-list {
+            margin: 10px 0 10px 32px;
+            padding: 10px;
+            border-left: 2px solid #666;
+        }
+
+        .todo-header {
+            color: #ffb000;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        .todo-item {
+            margin: 4px 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .todo-checkbox {
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+
+        .todo-item.completed { color: #00ff00; }
+        .todo-item.completed .todo-checkbox::before { content: "☑"; }
+
+        .todo-item.in-progress { color: #ffb000; }
+        .todo-item.in-progress .todo-checkbox::before { content: "⊡"; }
+
+        .todo-item.pending { color: #888888; }
+        .todo-item.pending .todo-checkbox::before { content: "☐"; }
+
+        .todo-progress {
+            margin-top: 8px;
+            color: #ffb000;
+            font-size: 0.9em;
+        }
+
+        /* Agent/sidechain messages */
+        .agent-label {
+            color: #8b5cf6;
+            font-size: 0.85em;
+            margin-left: 4px;
+        }
+
+        .sidechain-link {
+            color: #8b5cf6;
+            text-decoration: underline;
+            cursor: pointer;
+            font-size: 0.85em;
+            margin-left: 32px;
+            display: block;
+            margin-top: 4px;
+        }
+
+        /* Tool groups - Claude Code style */
+        .tool-group {
+            margin: 8px 0;
+        }
+
+        .tool-group-header {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            padding: 2px 0;
+        }
+
+        .tool-group-header .message-prefix {
+            color: #00ff00;
+        }
+
+        .tool-group-header .message-prefix::before {
+            content: "●";
+        }
+
+        .tool-group-summary {
+            color: #00ff00;
+            margin-left: 8px;
+        }
+
+        .tool-group-count {
+            color: #666666;
+            font-size: 0.9em;
+            margin-left: 8px;
+        }
+
+        .tool-group-content {
+            margin-left: 32px;
+            padding: 4px 0;
+            border-left: 1px dashed #333;
+            padding-left: 12px;
+            display: none;
+        }
+
+        .tool-group.expanded .tool-group-content {
+            display: block;
+        }
+
+        .tool-message {
+            margin: 4px 0;
+            display: flex;
+            align-items: flex-start;
+        }
+
+        .tool-message .message-prefix {
+            color: #00ff00;
+        }
+
+        .tool-message .message-prefix::before {
+            content: "→";
+        }
+
+        /* Individual tool display in detailed mode */
+        .tool-detail {
+            margin: 8px 0 8px 32px;
+            padding: 8px;
+            background: #0a0a0a;
+            border-left: 1px solid #333;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .tool-detail-header {
+            color: #00ff00;
+            margin-bottom: 4px;
+        }
+
+        .tool-detail-content {
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
         }
 
         /* Code blocks */
@@ -426,6 +523,47 @@ class ViewerGenerator:
             margin: 10px 0;
             overflow-x: auto;
             font-size: 12px;
+        }
+
+        /* Tool blocks (individual tools in groups) */
+        .tool-block {
+            margin: 4px 0;
+            margin-left: 24px;
+        }
+
+        .tool-block .tool-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #888;
+            font-size: 13px;
+            padding: 2px 0;
+        }
+
+        .tool-block .tool-prefix {
+            color: #00ff00;
+        }
+
+        .tool-block .tool-name {
+            color: #888;
+        }
+
+        .tool-block .tool-details {
+            margin-left: 24px;
+            margin-top: 4px;
+            padding: 8px;
+            background: #0a0a0a;
+            border-left: 1px solid #333;
+            font-size: 12px;
+            color: #666;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .tool-block .tool-details pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
         }
 
         /* Loading */
@@ -686,12 +824,19 @@ class ViewerGenerator:
             const container = document.getElementById('messages');
             container.innerHTML = '';
 
-            // Process conversations to group tool interactions
+            // Process conversations to group tool interactions and system messages
             let processedEntries = [];
             let i = 0;
 
             while (i < currentConversation.length) {
                 const entry = currentConversation[i];
+
+                // In focused mode, skip or collapse system messages
+                if (viewMode === 'focused' && entry.type === 'system') {
+                    // Skip system messages in focused mode
+                    i++;
+                    continue;
+                }
 
                 // Handle tool sequences: assistant tool_use -> user tool_result
                 if (entry.type === 'assistant' && entry.message && Array.isArray(entry.message.content)) {
@@ -754,8 +899,8 @@ class ViewerGenerator:
                     }
                 }
 
-                // Skip user messages that only contain tool results
-                if (entry.type === 'user' && entry.toolUseResult && entry.message) {
+                // Skip user messages that only contain tool results in focused mode
+                if (viewMode === 'focused' && entry.type === 'user' && entry.toolUseResult && entry.message) {
                     const hasUserText = entry.message.content && (
                         typeof entry.message.content === 'string' ||
                         (Array.isArray(entry.message.content) &&
@@ -869,47 +1014,230 @@ class ViewerGenerator:
         }
 
         function renderMessage(container, entry) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${entry.type}`;
+            // Classify the message type
+            let isThinking = false;
+            let isTodoWrite = false;
+            let isAgent = entry.is_sidechain || entry.isSidechain;
 
-            let header = '';
-            let mainContent = '';
+            // Check for thinking blocks
+            if (entry.type === 'assistant' && entry.message && Array.isArray(entry.message.content)) {
+                isThinking = entry.message.content.some(block => block.type === 'thinking');
+                // Check for TodoWrite tool
+                isTodoWrite = entry.message.content.some(block =>
+                    block.type === 'tool_use' && (block.name === 'TodoWrite' || block.tool_name === 'TodoWrite')
+                );
+            }
 
+            // Process different message types
             if (entry.type === 'summary') {
-                header = '[SUMMARY - Continuation from previous conversation]';
-                mainContent = entry.summary || 'No summary available';
-            } else if (entry.type === 'system') {
-                header = '[SYSTEM]';
-                mainContent = entry.content || '';
-            } else if (entry.message) {
-                const role = entry.message.role?.toUpperCase() || entry.type?.toUpperCase();
-                const timestamp = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : '';
-                header = `[${role}] ${timestamp}`;
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message summary';
+                messageDiv.innerHTML = `
+                    <span class="message-prefix"></span>
+                    <span class="message-content">
+                        <strong>Continuation from previous conversation</strong>
 
-                // Process message content
-                if (typeof entry.message.content === 'string') {
-                    mainContent = entry.message.content;
-                } else if (Array.isArray(entry.message.content)) {
-                    const textBlocks = [];
-                    entry.message.content.forEach(block => {
-                        if (block.type === 'text') {
-                            textBlocks.push(block.text || '');
-                        } else if (block.type === 'thinking') {
-                            textBlocks.push(`[Thinking] ${block.thinking || ''}`);
+${escapeHtml(entry.summary || 'No summary available')}
+                    </span>
+                `;
+                container.appendChild(messageDiv);
+            } else if (entry.message) {
+                // Handle thinking blocks separately
+                if (isThinking && entry.message.content) {
+                    // Extract thinking content
+                    const thinkingBlock = entry.message.content.find(b => b.type === 'thinking');
+                    if (thinkingBlock) {
+                        const thinkingDiv = document.createElement('div');
+                        thinkingDiv.className = 'message thinking';
+                        const isCollapsed = viewMode === 'focused';
+                        thinkingDiv.innerHTML = `
+                            <span class="message-prefix"></span>
+                            <span class="message-content">
+                                <span class="thinking-indicator" onclick="toggleThinking(this)">Thinking...</span>
+                                <div class="thinking-content${!isCollapsed ? ' expanded' : ''}">${escapeHtml(thinkingBlock.thinking || '')}</div>
+                            </span>
+                        `;
+                        container.appendChild(thinkingDiv);
+                    }
+                }
+
+                // Handle main content (non-thinking, non-tool)
+                const hasMainContent = entry.message.content && (
+                    typeof entry.message.content === 'string' ||
+                    (Array.isArray(entry.message.content) &&
+                     entry.message.content.some(b => b.type === 'text' && b.text && b.text.trim()))
+                );
+
+                if (hasMainContent) {
+                    const messageDiv = document.createElement('div');
+                    // Determine the correct class
+                    if (isAgent) {
+                        messageDiv.className = 'message agent';
+                    } else if (entry.type === 'system') {
+                        messageDiv.className = 'message system';
+                    } else {
+                        messageDiv.className = `message ${entry.type}`;
+                    }
+
+                    let mainContent = '';
+                    if (typeof entry.message.content === 'string') {
+                        mainContent = entry.message.content;
+                    } else if (Array.isArray(entry.message.content)) {
+                        // Extract only text blocks
+                        const textBlocks = entry.message.content
+                            .filter(b => b.type === 'text')
+                            .map(b => b.text || '')
+                            .join('\\n\\n');
+                        mainContent = textBlocks;
+                    }
+
+                    // Add agent label if it's a sidechain message
+                    let agentLabel = '';
+                    if (isAgent) {
+                        agentLabel = '<span class="agent-label">[Agent]</span> ';
+                    }
+
+                    messageDiv.innerHTML = `
+                        <span class="message-prefix"></span>
+                        <span class="message-content">${agentLabel}${escapeHtml(mainContent)}</span>
+                    `;
+                    container.appendChild(messageDiv);
+                }
+
+                // Handle TodoWrite tool specially
+                if (isTodoWrite && entry.message.content) {
+                    handleTodoWrite(container, entry);
+                }
+            } else if (entry.type === 'system') {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message system';
+                messageDiv.innerHTML = `
+                    <span class="message-prefix"></span>
+                    <span class="message-content">${escapeHtml(entry.content || '')}</span>
+                `;
+                container.appendChild(messageDiv);
+            }
+        }
+
+        function toggleThinking(element) {
+            const content = element.nextElementSibling;
+            content.classList.toggle('expanded');
+        }
+
+        function handleTodoWrite(container, entry) {
+            // Find the next tool result that contains the todo data
+            let todoData = null;
+            const entryIndex = currentConversation.indexOf(entry);
+            for (let i = entryIndex + 1; i < currentConversation.length; i++) {
+                const nextEntry = currentConversation[i];
+                if (nextEntry.type === 'user' && nextEntry.message && Array.isArray(nextEntry.message.content)) {
+                    const toolResult = nextEntry.message.content.find(b => b.type === 'tool_result');
+                    if (toolResult && toolResult.content) {
+                        try {
+                            // Try to parse the todo data
+                            const content = typeof toolResult.content === 'string' ?
+                                toolResult.content : JSON.stringify(toolResult.content);
+                            if (content.includes('todos')) {
+                                // Extract todo items from the content
+                                const match = content.match(/\\[\\{.*?\\}\\]/s);
+                                if (match) {
+                                    todoData = JSON.parse(match[0]);
+                                }
+                            }
+                        } catch (e) {
+                            console.error('Failed to parse todo data:', e);
                         }
-                    });
-                    mainContent = textBlocks.join('\\n\\n');
+                        break;
+                    }
                 }
             }
 
-            // Build the message HTML
-            let messageHTML = `<div class="message-header">${header}</div>`;
-            if (mainContent) {
-                messageHTML += `<div class="message-content">${escapeHtml(mainContent)}</div>`;
+            if (todoData && Array.isArray(todoData)) {
+                renderTodoList(container, todoData);
+            }
+        }
+
+        function createToolBlock(tool) {
+            const toolDiv = document.createElement('div');
+            toolDiv.className = 'tool-block';
+
+            let html = '';
+            if (tool.type === 'tool_use') {
+                const toolName = tool.name || 'Unknown Tool';
+                const inputStr = JSON.stringify(tool.input || {}, null, 2);
+                html = `
+                    <div class="tool-header" onclick="toggleToolDetails(this)">
+                        <span class="tool-prefix">●</span>
+                        <span class="tool-name">${escapeHtml(toolName)}</span>
+                    </div>
+                    <div class="tool-details">
+                        <pre>${escapeHtml(inputStr)}</pre>
+                    </div>
+                `;
+            } else if (tool.type === 'tool_result') {
+                const content = tool.content || '';
+                // Truncate very long results
+                const displayContent = content.length > 500
+                    ? content.substring(0, 500) + '\\n... [truncated]'
+                    : content;
+                const resultLabel = tool.id ? ('Result for ' + tool.id.substring(0, 8) + '...') : 'Result';
+                html = `
+                    <div class="tool-header" onclick="toggleToolDetails(this)">
+                        <span class="tool-prefix">↳</span>
+                        <span class="tool-name">${resultLabel}</span>
+                    </div>
+                    <div class="tool-details">
+                        <pre>${escapeHtml(displayContent)}</pre>
+                    </div>
+                `;
             }
 
-            messageDiv.innerHTML = messageHTML;
-            container.appendChild(messageDiv);
+            toolDiv.innerHTML = html;
+
+            // Start collapsed in focused mode
+            if (viewMode === 'focused') {
+                const details = toolDiv.querySelector('.tool-details');
+                if (details) details.style.display = 'none';
+            }
+
+            return toolDiv;
+        }
+
+        function toggleToolDetails(header) {
+            const details = header.nextElementSibling;
+            if (details) {
+                details.classList.toggle('expanded');
+                details.style.display = details.style.display === 'none' ? 'block' : 'none';
+            }
+        }
+
+        function renderTodoList(container, todos) {
+            const todoDiv = document.createElement('div');
+            todoDiv.className = 'todo-list';
+
+            let completed = todos.filter(t => t.status === 'completed').length;
+            let inProgress = todos.filter(t => t.status === 'in_progress').length;
+            let total = todos.length;
+            let percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+            let html = '<div class="todo-header">📋 Task List:</div>';
+
+            todos.forEach(todo => {
+                const statusClass = todo.status.replace('_', '-');
+                const displayText = todo.activeForm && todo.status === 'in_progress' ?
+                    todo.activeForm : (todo.content || '');
+                html += `
+                    <div class="todo-item ${statusClass}">
+                        <span class="todo-checkbox"></span>
+                        <span>${escapeHtml(displayText)}</span>
+                    </div>
+                `;
+            });
+
+            html += `<div class="todo-progress">Progress: ${completed}/${total} completed (${percentage}%)</div>`;
+
+            todoDiv.innerHTML = html;
+            container.appendChild(todoDiv);
         }
 
         function processContentBlocks(blocks) {
@@ -945,47 +1273,6 @@ class ViewerGenerator:
             return '';
         }
 
-        function createToolBlock(tool) {
-            const toolDiv = document.createElement('div');
-            toolDiv.className = 'tool-block';
-            const shouldHide = viewMode === 'focused';
-
-            if (tool.type === 'tool_use') {
-                const toolName = tool.name || 'Unknown Tool';
-                const inputStr = JSON.stringify(tool.input || {}, null, 2);
-
-                toolDiv.innerHTML = `
-                    <div class="tool-header ${shouldHide ? '' : 'expanded'}" onclick="toggleTool(this)">
-                        [TOOL:${toolName}]
-                    </div>
-                    <div class="tool-content ${shouldHide ? '' : 'expanded'}">
-                        <pre>${escapeHtml(inputStr)}</pre>
-                    </div>
-                `;
-            } else if (tool.type === 'tool_result') {
-                const content = tool.content || '';
-                // Truncate very long results in focused mode
-                const displayContent = shouldHide && content.length > 500
-                    ? content.substring(0, 500) + '\\n... [truncated]'
-                    : content;
-
-                toolDiv.innerHTML = `
-                    <div class="tool-header ${shouldHide ? '' : 'expanded'}" onclick="toggleTool(this)">
-                        [RESULT${tool.id ? ` for ${tool.id.substring(0, 8)}...` : ''}]
-                    </div>
-                    <div class="tool-content ${shouldHide ? '' : 'expanded'}">
-                        <pre>${escapeHtml(displayContent)}</pre>
-                    </div>
-                `;
-            }
-
-            return toolDiv;
-        }
-
-        function toggleTool(header) {
-            header.classList.toggle('expanded');
-            header.nextElementSibling.classList.toggle('expanded');
-        }
 
         function escapeHtml(text) {
             const div = document.createElement('div');
@@ -1129,9 +1416,9 @@ class ViewerGenerator:
 
             // Add conversation messages if currently loaded
             // Check if this is the currently loaded conversation
-            const isCurrentlyLoaded = currentConversation && 
+            const isCurrentlyLoaded = currentConversation &&
                 document.querySelector('.conversation-item.active')?.querySelector('.session-id')?.textContent?.includes(conv.session_id.substring(0, 12));
-            
+
             if (isCurrentlyLoaded && currentConversation) {
                 // Process conversation entries similar to the viewer display logic
                 let processedEntries = [];
@@ -1292,8 +1579,8 @@ class ViewerGenerator:
 
             // Create a safe filename from title and session ID
             const safeTitle = (conv.title || 'Conversation')
-                .replace(/[^a-zA-Z0-9\s-]/g, '') // Remove special characters
-                .replace(/\s+/g, '_') // Replace spaces with underscores
+                .replace(/[^a-zA-Z0-9\\s-]/g, '') // Remove special characters
+                .replace(/\\s+/g, '_') // Replace spaces with underscores
                 .substring(0, 50); // Limit length
             const shortSessionId = conv.session_id.substring(0, 8);
             const filename = `${safeTitle}_${shortSessionId}.md`;
@@ -1322,7 +1609,7 @@ class ViewerGenerator:
                 if (sessionIdElement) {
                     const sessionIdText = sessionIdElement.textContent;
                     // Find the full session ID from manifest
-                    const conv = manifest.conversations.find(c => 
+                    const conv = manifest.conversations.find(c =>
                         sessionIdText.includes(c.session_id.substring(0, 12))
                     );
                     if (conv) {

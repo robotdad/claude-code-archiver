@@ -98,40 +98,47 @@ def main(
             console.print("[red]Error:[/red] PROJECT_PATH is required when not using --refresh")
             sys.exit(1)
 
+        from .discovery import ConversationFile
+
         discovery = ProjectDiscovery()
 
         # Discover conversations from main project
         console.print(f"\n🔍 Discovering conversations for: [cyan]{project_path}[/cyan]")
-        conversations = discovery.discover_project_conversations(project_path, exclude_snapshots=False)
+        conversations: list[ConversationFile] = discovery.discover_project_conversations(
+            project_path, exclude_snapshots=False
+        )
 
         # Add conversations from aliases
         if alias:
             console.print(f"🔍 Including conversations from {len(alias)} alias(es):")
             for alias_pattern in alias:
                 console.print(f"  - [cyan]{alias_pattern}[/cyan]")
-                
+
                 # Handle wildcard patterns
-                if '*' in alias_pattern or '?' in alias_pattern:
-                    from pathlib import Path
+                if "*" in alias_pattern or "?" in alias_pattern:
                     alias_paths = list(Path(alias_pattern).parent.glob(Path(alias_pattern).name))
                     expanded_paths = [p for p in alias_paths if p.is_dir()]
                     if expanded_paths:
                         console.print(f"    Expanded to {len(expanded_paths)} path(s):")
                         for alias_path in expanded_paths:
                             console.print(f"      → [dim cyan]{alias_path}[/dim cyan]")
-                            alias_conversations = discovery.discover_project_conversations(alias_path, exclude_snapshots=False)
+                            alias_conversations = discovery.discover_project_conversations(
+                                alias_path, exclude_snapshots=False
+                            )
                             conversations.extend(alias_conversations)
                             console.print(f"        Found [green]{len(alias_conversations)}[/green] conversation(s)")
                     else:
-                        console.print(f"    [yellow]No directories found matching pattern[/yellow]")
+                        console.print("    [yellow]No directories found matching pattern[/yellow]")
                 else:
                     # Handle as literal path
-                    alias_conversations = discovery.discover_project_conversations(Path(alias_pattern), exclude_snapshots=False)
+                    alias_conversations = discovery.discover_project_conversations(
+                        Path(alias_pattern), exclude_snapshots=False
+                    )
                     conversations.extend(alias_conversations)
                     console.print(f"    Found [green]{len(alias_conversations)}[/green] conversation(s)")
 
         # Remove duplicates based on session_id
-        unique_conversations = {}
+        unique_conversations: dict[str, ConversationFile] = {}
         for conv in conversations:
             unique_conversations[conv.session_id] = conv
         conversations = list(unique_conversations.values())

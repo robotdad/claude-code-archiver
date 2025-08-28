@@ -21,7 +21,7 @@ from .viewer import ViewerGenerator
 class ArchiveManifest(BaseModel):
     """Manifest for the archive."""
 
-    version: str = "2.0"
+    version: str = "2.1"  # Bumped version for new tracking
     created_at: str
     project_path: str
     conversation_count: int
@@ -37,6 +37,10 @@ class ArchiveManifest(BaseModel):
     hidden_conversations: list[str] | None = None  # List of session IDs to hide
     user_metadata: dict[str, Any] | None = None  # User customizations and preferences
     last_refresh: str | None = None  # Timestamp of last refresh operation
+
+    # Sidechain and message tracking
+    sidechain_relationships: dict[str, list[str]] | None = None  # Session ID -> list of sidechain session IDs
+    aggregate_statistics: dict[str, Any] | None = None  # Aggregate stats across all conversations
 
 
 class Archiver:
@@ -90,7 +94,7 @@ class Archiver:
         if project_aliases:
             for alias in project_aliases:
                 # Handle wildcard patterns
-                if '*' in alias or '?' in alias:
+                if "*" in alias or "?" in alias:
                     # Use glob to expand wildcards
                     alias_paths = list(Path(alias).parent.glob(Path(alias).name))
                     for alias_path in alias_paths:
@@ -174,6 +178,8 @@ class Archiver:
                     "starts_with_summary": conv.starts_with_summary,
                     "is_post_compaction": conv.parent_session_id is not None,  # Has parent from compaction
                     "parent_session_id": conv.parent_session_id,  # For post-compaction continuations
+                    "has_sidechains": conv.has_sidechains,
+                    "sidechain_count": conv.sidechain_count,
                     "statistics": stats,
                 }
 
@@ -248,6 +254,12 @@ class Archiver:
                 "latest": max([c.last_timestamp for c in conversations if c.last_timestamp], default=None),
             }
 
+            # Build sidechain relationships map
+            sidechain_relationships = self._build_sidechain_relationships(conversations)
+
+            # Calculate aggregate statistics
+            aggregate_stats = self._calculate_aggregate_statistics(manifest_conversations)
+
             # Create manifest
             manifest = ArchiveManifest(
                 created_at=datetime.now(UTC).isoformat(),
@@ -263,6 +275,8 @@ class Archiver:
                 hidden_conversations=[],  # Initially no hidden conversations
                 user_metadata={},  # Empty user metadata initially
                 last_refresh=None,  # No refresh yet
+                sidechain_relationships=sidechain_relationships,
+                aggregate_statistics=aggregate_stats,
             )
 
             # Write manifest
@@ -541,6 +555,82 @@ class Archiver:
 
         return archive_path
 
+    def _build_sidechain_relationships(self, conversations: list[ConversationFile]) -> dict[str, list[str]]:
+        """Build a map of conversation sessions that have sidechains.
+
+        Since sidechains share the same session ID as their parent,
+        we track which conversations contain sidechains.
+
+        Args:
+            conversations: List of conversation files
+
+        Returns:
+            Dictionary mapping session IDs to list of related sidechain info
+        """
+        relationships: dict[str, list[str]] = {}
+
+        for conv in conversations:
+            if conv.has_sidechains:
+                # This conversation contains sidechain messages
+                if conv.session_id not in relationships:
+                    relationships[conv.session_id] = []
+                # Store metadata about the sidechains
+                relationships[conv.session_id].append(f"sidechains:{conv.sidechain_count}")
+
+        return relationships if relationships else {}
+
+    def _calculate_aggregate_statistics(self, manifest_conversations: list[dict[str, Any]]) -> dict[str, Any]:
+        """Calculate aggregate statistics across all conversations.
+
+        Args:
+            manifest_conversations: List of conversation manifests with stats
+
+        Returns:
+            Dictionary with aggregate statistics
+        """
+        aggregate: dict[str, Any] = {
+            "total_human_messages": 0,
+            "total_assistant_messages": 0,
+            "total_tool_results": 0,
+            "total_sidechain_messages": 0,
+            "total_task_invocations": 0,
+            "all_tool_uses": {},
+            "all_mcp_tool_uses": {},
+            "conversations_with_sidechains": 0,
+            "conversations_with_images": 0,
+            "conversations_with_thinking": 0,
+        }
+
+        for conv in manifest_conversations:
+            stats = conv.get("statistics", {})
+
+            # Aggregate message counts
+            aggregate["total_human_messages"] += stats.get("human_messages", 0)
+            aggregate["total_assistant_messages"] += stats.get("assistant_messages", 0)
+            aggregate["total_tool_results"] += stats.get("tool_result_messages", 0)
+            aggregate["total_sidechain_messages"] += stats.get("sidechain_messages", 0)
+            aggregate["total_task_invocations"] += stats.get("task_invocations", 0)
+
+            # Track conversations with special features
+            if stats.get("has_sidechains"):
+                aggregate["conversations_with_sidechains"] += 1
+            if stats.get("has_images"):
+                aggregate["conversations_with_images"] += 1
+            if stats.get("has_thinking"):
+                aggregate["conversations_with_thinking"] += 1
+
+            # Aggregate tool usage
+            for tool_name, count in stats.get("tool_uses", {}).items():
+                all_tools: dict[str, int] = aggregate["all_tool_uses"]  # type: ignore
+                all_tools[tool_name] = all_tools.get(tool_name, 0) + count
+
+            # Aggregate MCP tool usage
+            for tool_name, count in stats.get("mcp_tool_uses", {}).items():
+                mcp_tools: dict[str, int] = aggregate["all_mcp_tool_uses"]  # type: ignore
+                mcp_tools[tool_name] = mcp_tools.get(tool_name, 0) + count
+
+        return aggregate
+
     def refresh_archive(
         self,
         archive_path: Path,
@@ -573,7 +663,7 @@ class Archiver:
             # Use existing project path and aliases if not provided
             if project_path is None:
                 project_path = Path(existing_manifest["project_path"])
-                
+
             # Use existing aliases if not provided, or merge with existing if both provided
             existing_aliases = existing_manifest.get("project_aliases", [])
             if project_aliases is None:
@@ -598,7 +688,7 @@ class Archiver:
             if project_aliases:
                 for alias in project_aliases:
                     # Handle wildcard patterns
-                    if '*' in alias or '?' in alias:
+                    if "*" in alias or "?" in alias:
                         # Use glob to expand wildcards
                         alias_paths = list(Path(alias).parent.glob(Path(alias).name))
                         for alias_path in alias_paths:
@@ -620,15 +710,14 @@ class Archiver:
                         all_paths.append(str(alias_path))
 
             # Filter to only new conversations
-            new_conversations = [conv for conv in new_conversations
-                               if conv.session_id not in existing_session_ids]
+            new_conversations = [conv for conv in new_conversations if conv.session_id not in existing_session_ids]
 
             if not new_conversations:
                 # No new conversations, but still update serve.py and viewer.html with latest versions
                 serve_template = Path(__file__).parent / "serve_template.py"
                 serve_path = extracted_dir / "serve.py"
                 shutil.copy2(serve_template, serve_path)
-                
+
                 existing_manifest["last_refresh"] = datetime.now(UTC).isoformat()
                 if project_aliases:
                     existing_manifest["project_aliases"] = all_paths
@@ -637,7 +726,7 @@ class Archiver:
 
             # Process new conversations
             conversations_dir = extracted_dir / "conversations"
-            new_manifest_conversations = []
+            new_manifest_conversations: list[dict[str, Any]] = []
             total_new_messages = 0
 
             for conv in new_conversations:
@@ -669,6 +758,8 @@ class Archiver:
                     "starts_with_summary": conv.starts_with_summary,
                     "is_post_compaction": conv.parent_session_id is not None,
                     "parent_session_id": conv.parent_session_id,
+                    "has_sidechains": conv.has_sidechains,
+                    "sidechain_count": conv.sidechain_count,
                     "statistics": stats,
                     "conversation_type": "original",  # Default, will be updated
                     "display_by_default": True,
@@ -686,8 +777,9 @@ class Archiver:
                 existing_manifest["project_aliases"] = all_paths
 
             # Update date range if necessary
-            new_timestamps = [c["first_timestamp"] for c in new_manifest_conversations
-                            if c["first_timestamp"]]
+            new_timestamps: list[str] = [
+                c["first_timestamp"] for c in new_manifest_conversations if c.get("first_timestamp")
+            ]
             if new_timestamps:
                 current_earliest = existing_manifest["date_range"]["earliest"]
                 current_latest = existing_manifest["date_range"]["latest"]
@@ -695,10 +787,18 @@ class Archiver:
                 if current_earliest is None or min(new_timestamps) < current_earliest:
                     existing_manifest["date_range"]["earliest"] = min(new_timestamps)
 
-                latest_timestamps = [c["last_timestamp"] for c in new_manifest_conversations
-                                   if c["last_timestamp"]]
+                latest_timestamps: list[str] = [
+                    c["last_timestamp"] for c in new_manifest_conversations if c.get("last_timestamp")
+                ]
                 if latest_timestamps and (current_latest is None or max(latest_timestamps) > current_latest):
-                        existing_manifest["date_range"]["latest"] = max(latest_timestamps)
+                    existing_manifest["date_range"]["latest"] = max(latest_timestamps)
+
+            # Rebuild sidechain relationships and aggregate statistics with all conversations
+            all_conversations = existing_manifest["conversations"]
+            existing_manifest["sidechain_relationships"] = self._build_sidechain_relationships_from_manifest(
+                all_conversations
+            )
+            existing_manifest["aggregate_statistics"] = self._calculate_aggregate_statistics(all_conversations)
 
             # Update serve.py and viewer.html with latest versions
             serve_template = Path(__file__).parent / "serve_template.py"
@@ -713,3 +813,26 @@ class Archiver:
             # Clean up extracted directory
             if extracted_dir.exists():
                 shutil.rmtree(extracted_dir)
+
+    def _build_sidechain_relationships_from_manifest(
+        self, manifest_conversations: list[dict[str, Any]]
+    ) -> dict[str, list[str]]:
+        """Build sidechain relationships from manifest conversation data.
+
+        Args:
+            manifest_conversations: List of conversation manifests
+
+        Returns:
+            Dictionary mapping session IDs to sidechain info
+        """
+        relationships: dict[str, list[str]] = {}
+
+        for conv in manifest_conversations:
+            if conv.get("has_sidechains"):
+                session_id = conv["session_id"]
+                if session_id not in relationships:
+                    relationships[session_id] = []
+                sidechain_count = conv.get("sidechain_count", 0)
+                relationships[session_id].append(f"sidechains:{sidechain_count}")
+
+        return relationships if relationships else {}

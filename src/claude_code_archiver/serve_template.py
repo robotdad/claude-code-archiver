@@ -53,34 +53,35 @@ class ViewerHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         try:
             # Parse form data to get manifest
             # For simplicity, we'll expect the manifest as JSON in the request body
-            if self.headers.get('Content-Type', '').startswith('multipart/form-data'):
+            if self.headers.get("Content-Type", "").startswith("multipart/form-data"):
                 # Handle multipart form data (from the browser)
-                content_length = int(self.headers.get('Content-Length', 0))
+                content_length = int(self.headers.get("Content-Length", 0))
                 post_data = self.rfile.read(content_length)
-                
+
                 # Simple multipart parsing for manifest field
                 boundary = None
-                content_type = self.headers.get('Content-Type', '')
-                if 'boundary=' in content_type:
-                    boundary = content_type.split('boundary=')[1].split(';')[0].strip()
-                
-                form = {}
+                content_type = self.headers.get("Content-Type", "")
+                if "boundary=" in content_type:
+                    boundary = content_type.split("boundary=")[1].split(";")[0].strip()
+
+                form: dict[str, str] = {}
                 if boundary:
                     try:
-                        parts = post_data.decode('utf-8').split(f'--{boundary}')
+                        parts = post_data.decode("utf-8").split(f"--{boundary}")
                         for part in parts:
-                            if 'name="manifest"' in part and '\r\n\r\n' in part:
-                                data = part.split('\r\n\r\n', 1)[1]
-                                data = data.rstrip('\r\n-').rstrip()
-                                form['manifest'] = data
+                            if 'name="manifest"' in part and "\r\n\r\n" in part:
+                                data = part.split("\r\n\r\n", 1)[1]
+                                data = data.rstrip("\r\n-").rstrip()
+                                form["manifest"] = data
                                 break
                     except Exception as e:
-                        print(f'Error parsing multipart data: {e}')
+                        print(f"Error parsing multipart data: {e}")
 
-                if 'manifest' in form:
-                    manifest_data = form['manifest']
+                if "manifest" in form:
+                    manifest_data = form["manifest"]
                     if isinstance(manifest_data, bytes):
-                        manifest_data = manifest_data.decode('utf-8')
+                        manifest_data = manifest_data.decode("utf-8")
+                    assert isinstance(manifest_data, str)
 
                     # Update the manifest.json file
                     with open("manifest.json", "w", encoding="utf-8") as f:
@@ -116,8 +117,8 @@ class ViewerHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             archive_path = archive_files[0]  # Use first found archive
 
             # Create new archive with current directory contents
-            temp_archive = archive_path.with_suffix('.zip.new')
-            with zipfile.ZipFile(temp_archive, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            temp_archive = archive_path.with_suffix(".zip.new")
+            with zipfile.ZipFile(temp_archive, "w", zipfile.ZIP_DEFLATED) as zipf:
                 for file_path in Path(".").rglob("*"):
                     if file_path.is_file() and file_path != temp_archive:
                         zipf.write(file_path, file_path)
@@ -142,77 +143,86 @@ class ViewerHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         """Handle saving updated manifest and repacking archive in one operation."""
         try:
             # Parse form data to get manifest
-            if self.headers.get('Content-Type', '').startswith('multipart/form-data'):
+            if self.headers.get("Content-Type", "").startswith("multipart/form-data"):
                 # Handle multipart form data (from the browser)
-                content_length = int(self.headers.get('Content-Length', 0))
+                content_length = int(self.headers.get("Content-Length", 0))
                 post_data = self.rfile.read(content_length)
-                
+
                 # Simple multipart parsing for manifest field
                 boundary = None
-                content_type = self.headers.get('Content-Type', '')
-                if 'boundary=' in content_type:
-                    boundary = content_type.split('boundary=')[1].split(';')[0].strip()
-                
-                form = {}
+                content_type = self.headers.get("Content-Type", "")
+                if "boundary=" in content_type:
+                    boundary = content_type.split("boundary=")[1].split(";")[0].strip()
+
+                form: dict[str, str] = {}
                 if boundary:
                     try:
-                        parts = post_data.decode('utf-8').split(f'--{boundary}')
+                        parts = post_data.decode("utf-8").split(f"--{boundary}")
                         for part in parts:
-                            if 'name="manifest"' in part and '\r\n\r\n' in part:
-                                data = part.split('\r\n\r\n', 1)[1]
-                                data = data.rstrip('\r\n-').rstrip()
-                                form['manifest'] = data
+                            if 'name="manifest"' in part and "\r\n\r\n" in part:
+                                data = part.split("\r\n\r\n", 1)[1]
+                                data = data.rstrip("\r\n-").rstrip()
+                                form["manifest"] = data
                                 break
                     except Exception as e:
-                        print(f'Error parsing multipart data: {e}')
-                
-                if 'manifest' in form:
-                    manifest_data = form['manifest']
+                        print(f"Error parsing multipart data: {e}")
+
+                if "manifest" in form:
+                    manifest_data = form["manifest"]
                     if isinstance(manifest_data, bytes):
-                        manifest_data = manifest_data.decode('utf-8')
-                    
+                        manifest_data = manifest_data.decode("utf-8")
+                    assert isinstance(manifest_data, str)
+
                     print(f"Received manifest data: {len(manifest_data)} characters")
-                    
+
                     # Update the manifest.json file
                     with open("manifest.json", "w", encoding="utf-8") as f:
                         f.write(manifest_data)
                     print("Updated manifest.json")
-                    
+
                     # Update viewer.html with new manifest
                     self._update_viewer_html()
                     print("Updated viewer.html")
-                    
+
                     # Find and repack the archive - look in current dir and parent dir
                     archive_files = list(Path(".").glob("*.zip"))
                     if not archive_files:
                         # Look in parent directory (common when extracted with Finder)
                         archive_files = list(Path("..").glob("*.zip"))
-                        
+
                     if archive_files:
                         archive_path = archive_files[0]  # Use first found archive
                         print(f"Found archive to repack: {archive_path}")
-                        
+
                         # Create new archive with current directory contents
-                        temp_archive = archive_path.with_suffix('.zip.new')
-                        with zipfile.ZipFile(temp_archive, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                        temp_archive = archive_path.with_suffix(".zip.new")
+                        with zipfile.ZipFile(temp_archive, "w", zipfile.ZIP_DEFLATED) as zipf:
                             for file_path in Path(".").rglob("*"):
-                                if file_path.is_file() and file_path != temp_archive and not file_path.name.endswith('.zip.new'):
+                                if (
+                                    file_path.is_file()
+                                    and file_path != temp_archive
+                                    and not file_path.name.endswith(".zip.new")
+                                ):
                                     # Use relative paths in the archive
                                     zipf.write(file_path, file_path)
-                        
+
                         # Replace original archive
                         archive_path.unlink()
                         temp_archive.rename(archive_path)
                         print(f"Archive repacked successfully: {archive_path}")
-                        
+
                         self.send_response(200)
                         self.send_header("Content-type", "application/json")
                         self.end_headers()
-                        self.wfile.write(json.dumps({
-                            "success": True, 
-                            "archive": str(archive_path.name),
-                            "message": "Changes saved and archive repacked successfully"
-                        }).encode())
+                        self.wfile.write(
+                            json.dumps(
+                                {
+                                    "success": True,
+                                    "archive": str(archive_path.name),
+                                    "message": "Changes saved and archive repacked successfully",
+                                }
+                            ).encode()
+                        )
                     else:
                         # Try to find archive with a name based on current directory
                         current_dir = Path.cwd().name
@@ -220,27 +230,31 @@ class ViewerHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                         if potential_archive.exists():
                             archive_path = potential_archive
                             print(f"Found archive based on directory name: {archive_path}")
-                            
+
                             # Create new archive with current directory contents
-                            temp_archive = archive_path.with_suffix('.zip.new')
-                            with zipfile.ZipFile(temp_archive, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                            temp_archive = archive_path.with_suffix(".zip.new")
+                            with zipfile.ZipFile(temp_archive, "w", zipfile.ZIP_DEFLATED) as zipf:
                                 for file_path in Path(".").rglob("*"):
                                     if file_path.is_file() and file_path != temp_archive:
                                         zipf.write(file_path, file_path)
-                            
+
                             # Replace original archive
                             archive_path.unlink()
                             temp_archive.rename(archive_path)
                             print(f"Archive repacked successfully: {archive_path}")
-                            
+
                             self.send_response(200)
                             self.send_header("Content-type", "application/json")
                             self.end_headers()
-                            self.wfile.write(json.dumps({
-                                "success": True, 
-                                "archive": str(archive_path.name),
-                                "message": "Changes saved and archive repacked successfully"
-                            }).encode())
+                            self.wfile.write(
+                                json.dumps(
+                                    {
+                                        "success": True,
+                                        "archive": str(archive_path.name),
+                                        "message": "Changes saved and archive repacked successfully",
+                                    }
+                                ).encode()
+                            )
                         else:
                             # No archive found, just save manifest
                             print("No archive found to repack")
@@ -250,17 +264,19 @@ class ViewerHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                             self.send_response(200)
                             self.send_header("Content-type", "application/json")
                             self.end_headers()
-                            self.wfile.write(json.dumps({
-                                "success": True,
-                                "message": "Changes saved (no archive found to repack)"
-                            }).encode())
+                            self.wfile.write(
+                                json.dumps(
+                                    {"success": True, "message": "Changes saved (no archive found to repack)"}
+                                ).encode()
+                            )
                 else:
                     raise ValueError("No manifest data received")
             else:
                 raise ValueError("Expected multipart/form-data")
-                
+
         except Exception as e:
             import traceback
+
             print(f"Error saving and repacking: {e}")
             print(f"Traceback: {traceback.format_exc()}")
             self.send_response(500)

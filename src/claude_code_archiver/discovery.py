@@ -24,6 +24,9 @@ class ConversationFile(BaseModel):
     message_uuids: set[str] = set()
     # For post-compaction continuations
     parent_session_id: str | None = None
+    # Sidechain detection
+    has_sidechains: bool = False
+    sidechain_count: int = 0
 
 
 class ProjectDiscovery:
@@ -101,6 +104,8 @@ class ProjectDiscovery:
         starts_with_summary = False
         leaf_uuid = None
         actual_session_id = None
+        has_sidechains = False
+        sidechain_count = 0
 
         try:
             with open(file_path, encoding="utf-8") as f:
@@ -122,12 +127,21 @@ class ProjectDiscovery:
                     if first_data.get("sessionId"):
                         actual_session_id = first_data["sessionId"]
 
-                    # Find first timestamp (look deeper for conversations starting with summaries)
+                    # Find first timestamp and check for sidechains
                     for line in lines[: min(20, len(lines))]:
                         data = json.loads(line)
-                        if data.get("timestamp"):
+                        if data.get("timestamp") and not first_timestamp:
                             first_timestamp = data["timestamp"]
-                            break
+                        # Check for sidechain messages
+                        if data.get("isSidechain") is True:
+                            has_sidechains = True
+
+                    # Count total sidechains if any were detected
+                    if has_sidechains:
+                        for line in lines:
+                            data = json.loads(line)
+                            if data.get("isSidechain") is True:
+                                sidechain_count += 1
 
                     # Get last timestamp
                     if len(lines) > 0:
@@ -159,6 +173,8 @@ class ProjectDiscovery:
             leaf_uuid=leaf_uuid,
             message_uuids=message_uuids,
             parent_session_id=parent_session_id,
+            has_sidechains=has_sidechains,
+            sidechain_count=sidechain_count,
         )
 
     def _extract_message_uuids(self, file_path: Path) -> set[str]:
@@ -309,17 +325,27 @@ class ProjectDiscovery:
                     chains[conv.parent_session_id] = []
                 chains[conv.parent_session_id].append(conv.session_id)
 
-        # Also check for non-compaction continuations using leaf_uuid
-        # Build a map of leaf_uuid to session_id for quick lookup
-        leaf_to_session: dict[str, str] = {}
-        for conv in conversations:
-            # Build UUID map for ALL conversations to catch all continuation relationships
+        # Build UUID maps PER CONVERSATION FILE (not global)
+        # UUIDs are only unique within a single conversation file
+        # When multiple conversations have the same last UUID, prefer the earlier one (by timestamp)
+        uuid_to_session: dict[str, str] = {}
+
+        # Sort conversations by timestamp to handle conflicts predictably
+        sorted_convs = sorted(conversations, key=lambda c: c.first_timestamp or "")
+
+        # First pass: collect last UUIDs from each conversation
+        for conv in sorted_convs:
             try:
                 with open(conv.path, encoding="utf-8") as f:
+                    last_uuid = None
                     for line in f:
                         data = json.loads(line)
                         if uuid := data.get("uuid"):
-                            leaf_to_session[uuid] = conv.session_id
+                            last_uuid = uuid
+                    # Map the last UUID of this conversation to its session ID
+                    # If UUID already exists, keep the first (earliest) mapping
+                    if last_uuid and last_uuid not in uuid_to_session:
+                        uuid_to_session[last_uuid] = conv.session_id
             except (OSError, json.JSONDecodeError):
                 continue
 
@@ -327,7 +353,7 @@ class ProjectDiscovery:
         for conv in conversations:
             if conv.starts_with_summary and conv.leaf_uuid:
                 # This conversation continues from another
-                parent_id = leaf_to_session.get(conv.leaf_uuid)
+                parent_id = uuid_to_session.get(conv.leaf_uuid)
                 # Only add to chains if parent exists and is different from self
                 if parent_id and parent_id != conv.session_id:
                     if parent_id not in chains:
