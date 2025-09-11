@@ -68,8 +68,8 @@ def detect_sdk_pattern(conversation_file: ConversationFile) -> SDKPattern:
         with open(conversation_file.path, encoding="utf-8") as f:
             lines = f.readlines()
 
-        if len(lines) < 3:
-            # SDK patterns need at least 3 lines (summary, user, assistant)
+        if len(lines) < 1:
+            # Need at least one line to check
             confidence_score = 0.0
             return SDKPattern(
                 has_completion_marker=has_completion_marker,
@@ -92,12 +92,14 @@ def detect_sdk_pattern(conversation_file: ConversationFile) -> SDKPattern:
         except (json.JSONDecodeError, KeyError) as e:
             logger.debug(f"Failed to parse first line in {conversation_file.path}: {e}")
 
-        # Check second line (user message) for SDK patterns
-        if len(lines) >= 2:
+        # Check for user message with SDK patterns (could be line 0 or line 1)
+        user_line_idx = 1 if has_completion_marker else 0
+
+        if len(lines) > user_line_idx:
             try:
-                second_data = json.loads(lines[1])
-                if second_data.get("type") == "user":
-                    message_content = second_data.get("message", {})
+                user_data = json.loads(lines[user_line_idx])
+                if user_data.get("type") == "user":
+                    message_content = user_data.get("message", {})
                     content: Any = message_content.get("content", "")
 
                     # Convert to string if it's a list format
@@ -117,7 +119,19 @@ def detect_sdk_pattern(conversation_file: ConversationFile) -> SDKPattern:
 
                     content_lower = content.lower()
 
-                    # Check for key SDK phrases
+                    # Check for key SDK phrases - exact matches for SDK-generated patterns
+                    sdk_exact_phrases = [
+                        "analyze this document and extract structured knowledge",
+                        "analyze this article and extract structured knowledge",
+                    ]
+
+                    for phrase in sdk_exact_phrases:
+                        if phrase in content_lower:
+                            has_analyze_instruction = True
+                            has_knowledge_extraction = True
+                            break
+
+                    # Also check for the original pattern
                     if "analyze this article and extract structured knowledge" in content_lower:
                         has_analyze_instruction = True
                         has_knowledge_extraction = True
@@ -142,14 +156,15 @@ def detect_sdk_pattern(conversation_file: ConversationFile) -> SDKPattern:
                     ):
                         has_article_processing = True
             except (json.JSONDecodeError, KeyError) as e:
-                logger.debug(f"Failed to parse second line in {conversation_file.path}: {e}")
+                logger.debug(f"Failed to parse user line in {conversation_file.path}: {e}")
 
-        # Check third line (assistant response) for JSON pattern
-        if len(lines) >= 3:
+        # Check assistant response for JSON pattern (next line after user)
+        assistant_line_idx = user_line_idx + 1
+        if len(lines) > assistant_line_idx:
             try:
-                third_data = json.loads(lines[2])
-                if third_data.get("type") == "assistant":
-                    message_content = third_data.get("message", {})
+                assistant_data = json.loads(lines[assistant_line_idx])
+                if assistant_data.get("type") == "assistant":
+                    message_content = assistant_data.get("message", {})
                     content: Any = message_content.get("content", [])
 
                     if isinstance(content, list) and len(content) > 0:  # type: ignore
@@ -168,7 +183,7 @@ def detect_sdk_pattern(conversation_file: ConversationFile) -> SDKPattern:
                                     if _is_pure_json_response(text_content):
                                         has_pure_json_response = True
             except (json.JSONDecodeError, KeyError) as e:
-                logger.debug(f"Failed to parse third line in {conversation_file.path}: {e}")
+                logger.debug(f"Failed to parse assistant line in {conversation_file.path}: {e}")
 
     except OSError as e:
         logger.error(f"Unable to read conversation file {conversation_file.path}: {e}")
@@ -284,7 +299,7 @@ def _calculate_confidence_score(
     """Calculate confidence score for SDK pattern detection.
 
     High Confidence Indicators (0.9+):
-    - Completion marker + "Analyze this article" + JSON requirement + structured response
+    - Exact phrase "Analyze this document/article and extract structured knowledge"
     - Response is pure JSON data structure
     - 3-4 message conversation
 
@@ -305,11 +320,24 @@ def _calculate_confidence_score(
     """
     score = 0.0
 
+    # Very high confidence for exact SDK phrase match
+    if has_analyze_instruction and has_knowledge_extraction:
+        # This indicates exact phrase match for SDK pattern
+        score += 0.5  # Very strong indicator
+
+        # Additional boost if also has structured response
+        if has_structured_response:
+            score += 0.2
+
+        # Even more if pure JSON response
+        if has_pure_json_response:
+            score += 0.2
+
     # High confidence indicators
-    if has_completion_marker and has_analyze_instruction and has_json_requirement and has_structured_response:
+    elif has_completion_marker and has_analyze_instruction and has_json_requirement and has_structured_response:
         score += 0.4  # Strong base pattern
 
-    if has_pure_json_response:
+    if has_pure_json_response and score < 0.3:
         score += 0.3  # Very strong indicator
 
     if has_short_conversation and message_count == 3:
@@ -317,21 +345,22 @@ def _calculate_confidence_score(
     elif has_short_conversation and message_count == 4:
         score += 0.15  # Still very good
 
-    # Medium confidence indicators
-    if has_knowledge_extraction:
-        score += 0.15
+    # Medium confidence indicators (only add if not already high)
+    if score < 0.6:
+        if has_knowledge_extraction:
+            score += 0.15
 
-    if has_article_processing:
-        score += 0.1
+        if has_article_processing:
+            score += 0.1
 
-    if has_analyze_instruction:
-        score += 0.1
+        if has_analyze_instruction:
+            score += 0.1
 
-    if has_json_requirement:
-        score += 0.1
+        if has_json_requirement:
+            score += 0.1
 
-    if has_structured_response:
-        score += 0.1
+        if has_structured_response:
+            score += 0.1
 
     # Lower confidence for longer conversations (less likely to be SDK)
     if message_count > 4:

@@ -184,6 +184,12 @@ class Archiver:
                     "has_sidechains": conv.has_sidechains,
                     "sidechain_count": conv.sidechain_count,
                     "statistics": stats,
+                    # Enhanced detector metadata fields
+                    "continuation_confidence": conv.continuation_confidence,
+                    "continuation_type": conv.continuation_type,
+                    "sdk_pattern_score": conv.sdk_pattern_score,
+                    "is_sdk_generated": conv.is_sdk_generated,
+                    "is_subagent_sidechain": conv.is_subagent_sidechain,
                 }
 
                 # We'll mark is_continuation after building chains
@@ -196,8 +202,10 @@ class Archiver:
 
                 manifest_conversations.append(manifest_conv)
 
-            # Find continuation chains
-            chains = self.discovery.find_continuation_chains(conversations)
+            # Find continuation chains using the enhanced detector
+            from .continuation_detector import find_continuation_chains
+
+            chains = find_continuation_chains(conversations)
 
             # Mark conversations that are continuations (appear in chains as values)
             continuation_ids: set[str] = set()

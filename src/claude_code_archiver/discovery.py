@@ -536,59 +536,6 @@ class ProjectDiscovery:
             pass
         return False
 
-    def find_continuation_chains(self, conversations: list[ConversationFile]) -> dict[str, list[str]]:
-        """Find continuation chains in conversations.
-
-        Args:
-            conversations: List of conversation files
-
-        Returns:
-            Dictionary mapping conversation IDs to their continuation chain
-        """
-        chains: dict[str, list[str]] = {}
-
-        # For post-compaction continuations, use parent_session_id
-        for conv in conversations:
-            if conv.parent_session_id:
-                # This is a post-compaction continuation
-                if conv.parent_session_id not in chains:
-                    chains[conv.parent_session_id] = []
-                chains[conv.parent_session_id].append(conv.session_id)
-
-        # Build UUID maps PER CONVERSATION FILE (not global)
-        # UUIDs are only unique within a single conversation file
-        # When multiple conversations have the same last UUID, prefer the earlier one (by timestamp)
-        uuid_to_session: dict[str, str] = {}
-
-        # Sort conversations by timestamp to handle conflicts predictably
-        sorted_convs = sorted(conversations, key=lambda c: c.first_timestamp or "")
-
-        # First pass: collect last UUIDs from each conversation
-        # Use optimized approach to find last UUID without reading entire file
-        for conv in sorted_convs:
-            try:
-                last_uuid = self._get_last_uuid_optimized(conv.path)
-                # Map the last UUID of this conversation to its session ID
-                # If UUID already exists, keep the first (earliest) mapping
-                if last_uuid and last_uuid not in uuid_to_session:
-                    uuid_to_session[last_uuid] = conv.session_id
-            except Exception as e:
-                logger.debug(f"Failed to extract last UUID from {conv.path}: {e}")
-                continue
-
-        # Now build chains for non-compaction continuations
-        for conv in conversations:
-            if conv.starts_with_summary and conv.leaf_uuid and not conv.is_completion_marker:
-                # This conversation continues from another (exclude completion markers)
-                parent_id = uuid_to_session.get(conv.leaf_uuid)
-                # Only add to chains if parent exists and is different from self
-                if parent_id and parent_id != conv.session_id:
-                    if parent_id not in chains:
-                        chains[parent_id] = []
-                    chains[parent_id].append(conv.session_id)
-
-        return chains
-
     def _get_last_uuid_optimized(self, file_path: Path) -> str | None:
         """Get the last UUID from a file by reading from the end.
 

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
 from typing import TYPE_CHECKING
+from typing import Any
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -43,8 +44,11 @@ def detect_continuation_pattern(conversation_file: "ConversationFile") -> Summar
     # Detect session transitions
     has_transitions, session_ids = _detect_session_transitions(file_path)
 
+    # Check for explicit continuation content
+    _, content_confidence = _detect_explicit_continuation_content(file_path)
+
     # Calculate confidence score
-    confidence_score = _calculate_confidence_score(
+    structural_confidence = _calculate_confidence_score(
         is_single_summary=is_single_summary,
         summary_count=summary_count,
         has_session_transitions=has_transitions,
@@ -52,6 +56,9 @@ def detect_continuation_pattern(conversation_file: "ConversationFile") -> Summar
         parent_session_id=conversation_file.parent_session_id,
         is_sdk_generated=conversation_file.is_sdk_generated,
     )
+
+    # Use max of structural and content confidence
+    confidence_score = max(structural_confidence, content_confidence)
 
     # Determine summary type
     if summary_count == 0:
@@ -177,6 +184,94 @@ def _detect_session_transitions(file_path: Path) -> tuple[bool, set[str]]:
     return len(session_ids) > 1, session_ids
 
 
+def _detect_explicit_continuation_content(file_path: Path) -> tuple[bool, float]:
+    """Detect explicit continuation statements in conversation content.
+
+    Looks for explicit text indicators like:
+    - "This session is being continued from a previous conversation"
+    - "ran out of context"
+    - "session continues"
+    - "continued from previous"
+
+    Args:
+        file_path: Path to the conversation file
+
+    Returns:
+        Tuple of (has_explicit_continuation, confidence_score)
+    """
+    # Explicit continuation phrases to look for
+    continuation_phrases = [
+        "this session is being continued from a previous conversation",
+        "ran out of context",
+        "session continues",
+        "continued from previous",
+        "continuing from where we left off",
+        "picking up from our last conversation",
+        "resuming our previous discussion",
+        "context limit reached",
+        "hit the context limit",
+    ]
+
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            # Check first 10 lines for explicit continuation statements
+            for i, line in enumerate(f):
+                if i >= 10:  # Limit search to first 10 lines
+                    break
+
+                try:
+                    data = json.loads(line)
+
+                    # Check conversation title
+                    if title := data.get("name"):
+                        title_lower = title.lower()
+                        for phrase in continuation_phrases:
+                            if phrase in title_lower:
+                                return True, 0.95  # Very high confidence
+
+                    # Check message content (for user or assistant messages)
+                    if data.get("type") in ["user", "assistant"]:
+                        message_content = data.get("message", {})
+                        content: Any = message_content.get("content", "")
+
+                        # Handle list format content
+                        if isinstance(content, list):
+                            content_parts: list[str] = []
+                            for item in content:  # type: ignore
+                                item_typed: Any = item  # type: ignore
+                                if isinstance(item_typed, dict) and item_typed.get("type") == "text":  # type: ignore
+                                    text_value: Any = item_typed.get("text", "")  # type: ignore
+                                    if isinstance(text_value, str):
+                                        content_parts.append(text_value)
+                            content = " ".join(content_parts)
+
+                        # Ensure content is string
+                        if not isinstance(content, str):
+                            content = str(content)
+
+                        content_lower = content.lower()
+
+                        # Check for explicit continuation phrases
+                        for phrase in continuation_phrases:
+                            if phrase in content_lower:
+                                # Higher confidence for user messages in first few lines
+                                if data.get("type") == "user" and i < 5:
+                                    return True, 0.95
+                                return True, 0.85
+
+                except (json.JSONDecodeError, KeyError):
+                    continue
+
+    except OSError as e:
+        logger.debug(f"Unable to read conversation file {file_path}: {e}")
+        return False, 0.0
+    except Exception as e:
+        logger.debug(f"Error detecting explicit continuation content in {file_path}: {e}")
+        return False, 0.0
+
+    return False, 0.0
+
+
 def _calculate_confidence_score(
     is_single_summary: bool,
     summary_count: int,
@@ -254,3 +349,98 @@ def determine_continuation_type(pattern: SummaryPattern) -> str | None:
         return "context_history"
 
     return "possible_continuation"
+
+
+def find_continuation_chains(conversations: list["ConversationFile"]) -> dict[str, list[str]]:
+    """Find continuation chains in conversations using enhanced detection.
+
+    This replaces the old chain-finding logic with the new detector-based approach.
+
+    Args:
+        conversations: List of conversation files
+
+    Returns:
+        Dictionary mapping conversation IDs to their continuation chain
+    """
+    chains: dict[str, list[str]] = {}
+
+    # For post-compaction continuations, use parent_session_id
+    for conv in conversations:
+        if conv.parent_session_id:
+            # This is a post-compaction continuation
+            if conv.parent_session_id not in chains:
+                chains[conv.parent_session_id] = []
+            chains[conv.parent_session_id].append(conv.session_id)
+
+    # Build UUID maps PER CONVERSATION FILE (not global)
+    # UUIDs are only unique within a single conversation file
+    # When multiple conversations have the same last UUID, prefer the earlier one (by timestamp)
+    uuid_to_session: dict[str, str] = {}
+
+    # Sort conversations by timestamp to handle conflicts predictably
+    sorted_convs = sorted(conversations, key=lambda c: c.first_timestamp or "")
+
+    # First pass: collect last UUIDs from each conversation
+    # Use optimized approach to find last UUID without reading entire file
+    for conv in sorted_convs:
+        try:
+            last_uuid = _get_last_uuid_optimized(conv.path)
+            # Map the last UUID of this conversation to its session ID
+            # If UUID already exists, keep the first (earliest) mapping
+            if last_uuid and last_uuid not in uuid_to_session:
+                uuid_to_session[last_uuid] = conv.session_id
+        except Exception as e:
+            logger.debug(f"Failed to extract last UUID from {conv.path}: {e}")
+            continue
+
+    # Now build chains for non-compaction continuations
+    for conv in conversations:
+        if conv.starts_with_summary and conv.leaf_uuid and not conv.is_completion_marker:
+            # This conversation continues from another (exclude completion markers)
+            parent_id = uuid_to_session.get(conv.leaf_uuid)
+            # Only add to chains if parent exists and is different from self
+            if parent_id and parent_id != conv.session_id:
+                if parent_id not in chains:
+                    chains[parent_id] = []
+                chains[parent_id].append(conv.session_id)
+
+    return chains
+
+
+def _get_last_uuid_optimized(file_path: Path) -> str | None:
+    """Get the last UUID from a file by reading from the end.
+
+    Args:
+        file_path: Path to the JSONL file
+
+    Returns:
+        Last UUID found in the file, or None if not found
+    """
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            # Read file in reverse to find last UUID faster
+            # For very large files, this avoids reading the entire content
+            lines = f.readlines()
+
+            # Check last 20 lines in reverse order for UUID
+            for line in reversed(lines[-20:]):
+                try:
+                    data = json.loads(line)
+                    if uuid := data.get("uuid"):
+                        return uuid
+                except (json.JSONDecodeError, KeyError):
+                    continue
+
+            # Fallback: check earlier lines if no UUID found in last 20
+            for line in reversed(lines[:-20]):
+                try:
+                    data = json.loads(line)
+                    if uuid := data.get("uuid"):
+                        return uuid
+                except (json.JSONDecodeError, KeyError):
+                    continue
+
+    except (OSError, Exception) as e:
+        logger.debug(f"Error reading last UUID from {file_path}: {e}")
+
+    return None

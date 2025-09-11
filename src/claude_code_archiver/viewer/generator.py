@@ -992,7 +992,7 @@ class ViewerGenerator:
                 </div>
                 <div class="filter-controls" id="filterControls">
                     <button class="filter-btn" id="btnSDK" onclick="toggleConversationType('sdk_generated')">Show SDK</button>
-                    <button class="filter-btn" id="btnSubagents" onclick="toggleConversationType('subagent_sidechain')">Toggle Subagents</button>
+                    <button class="filter-btn" id="btnSubagents" onclick="toggleConversationType('multi_agent_workflow')">Toggle Subagents</button>
                     <button class="filter-btn" id="btnSnapshots" onclick="toggleConversationType('snapshot')">Show Snapshots</button>
                     <button class="filter-btn" id="btnCompletions" onclick="toggleConversationType('completion_marker')">Show Completions</button>
                     <button class="filter-btn" id="btnShowAll" onclick="showAllTypes()">Show All</button>
@@ -1955,7 +1955,7 @@ ${escapeHtml(entry.summary || 'No summary available')}
             // Update button states based on visibility
             const buttons = {
                 'btnSDK': 'sdk_generated',
-                'btnSubagents': 'subagent_sidechain',
+                'btnSubagents': 'multi_agent_workflow',
                 'btnSnapshots': 'snapshot',
                 'btnCompletions': 'completion_marker'
             };

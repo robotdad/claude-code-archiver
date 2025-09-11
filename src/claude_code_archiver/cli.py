@@ -180,7 +180,9 @@ def main(
             console.print(table)
 
             # Show continuation chains
-            chains = discovery.find_continuation_chains(conversations)
+            from .continuation_detector import find_continuation_chains
+
+            chains = find_continuation_chains(conversations)
             if chains:
                 console.print("\n🔗 Continuation chains detected:")
                 for parent, children in chains.items():

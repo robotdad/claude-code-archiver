@@ -59,8 +59,10 @@ def test_find_continuation_chains(temp_continuation_project: tuple[Path, Path]) 
     test_project = Path("/test/continuation")
     conversations = discovery.discover_project_conversations(test_project)
 
-    # Find chains
-    _ = discovery.find_continuation_chains(conversations)
+    # Find chains using the new detector
+    from src.claude_code_archiver.continuation_detector import find_continuation_chains
+
+    _ = find_continuation_chains(conversations)
 
     # Should have found the continuation
     assert len(conversations) == 2
