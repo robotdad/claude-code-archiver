@@ -66,6 +66,11 @@ venv.bak/
 *.zip
 archives/
 .tmp_*/
+.ai/
+.claude/
+ai_context/
+.data/
+.claude-trace/
 
 # uv
 .python-version

@@ -23,7 +23,11 @@ class ViewerGenerator:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Claude Code Conversations</title>
+    <title>Claude Code Archive</title>
+    <!-- Markdown rendering and syntax highlighting -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
     <style>
         * {
             margin: 0;
@@ -31,38 +35,182 @@ class ViewerGenerator:
             box-sizing: border-box;
         }
 
+        :root {
+            /* Primary colors */
+            --bg-primary: #1a1a1a;        /* Main background */
+            --bg-secondary: #2a2a2a;      /* Panel backgrounds */
+            --bg-tertiary: #3a3a3a;       /* Interactive elements */
+
+            /* Text colors */
+            --text-primary: #e1e1e1;      /* Main text */
+            --text-secondary: #a1a1a1;    /* Secondary text */
+            --text-muted: #717171;        /* Muted text */
+
+            /* Accent colors */
+            --accent-green: #7dd87d;      /* Soft green accent */
+            --accent-green-muted: #5bb85b; /* Darker green for borders */
+            --accent-orange: #ff9f40;     /* Warning/highlight color */
+
+            /* Border colors */
+            --border-primary: #404040;    /* Main borders */
+            --border-secondary: #2a2a2a;  /* Subtle borders */
+
+            /* State colors */
+            --hover-bg: #3a3a3a;         /* Hover states */
+            --active-bg: #4a4a4a;        /* Active states */
+        }
+
         body {
-            font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
-            background: #0c0c0c;
-            color: #00ff00;
+            font-family: system-ui, -apple-system, 'SF Pro Display', 'Segoe UI', 'Roboto', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
             padding: 20px;
-            line-height: 1.4;
+            line-height: 1.6;
             font-size: 14px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
         .container {
-            max-width: 100%;
+            max-width: 1400px;
+            margin: 0 auto;
             height: 100vh;
             display: flex;
             flex-direction: column;
+            gap: 20px;
         }
 
-        .header {
-            border: 1px solid #00ff00;
-            padding: 10px;
+        /* Unified Header */
+        .unified-header {
+            border: 1px solid var(--accent-green-muted);
+            padding: 20px;
             margin-bottom: 20px;
-            background: #1a1a1a;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            font-family: system-ui, -apple-system, sans-serif;
         }
 
-        .header h1 {
-            font-size: 16px;
-            font-weight: normal;
-            color: #ffb000;
+        .header-main {
+            margin-bottom: 16px;
         }
 
-        .stats {
-            margin-top: 10px;
-            color: #888;
+        .project-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--accent-orange);
+            margin: 0 0 6px 0;
+            letter-spacing: -0.5px;
+        }
+
+        .project-path {
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-family: 'SF Mono', 'Monaco', monospace;
+        }
+
+        .statistics-inline {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .stat-group {
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 8px 12px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            min-width: 80px;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent-green);
+            margin-bottom: 2px;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .type-breakdown {
+            color: var(--accent-green);
+            font-size: 13px;
+            line-height: 1.6;
+            margin: 12px 0 0 0;
+            padding: 12px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+        }
+
+        .type-item {
+            margin: 3px 0;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+
+        .type-count {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .type-status {
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+
+        .filter-controls {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            color: var(--text-secondary);
+            padding: 8px 16px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            transition: all 0.2s ease;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+
+        .filter-btn:hover {
+            background: var(--hover-bg);
+            color: var(--text-primary);
+            border-color: var(--accent-green-muted);
+        }
+
+        .filter-btn.active {
+            background: var(--accent-green);
+            color: var(--bg-primary);
+            border-color: var(--accent-green);
+            font-weight: 600;
+        }
+
+        .filter-btn.warning {
+            border-color: var(--accent-orange);
+            color: var(--accent-orange);
+        }
+
+        .filter-btn.warning:hover {
+            background: var(--accent-orange);
+            color: var(--bg-primary);
         }
 
         /* Main Layout */
@@ -70,27 +218,31 @@ class ViewerGenerator:
             display: flex;
             flex: 1;
             overflow: hidden;
-            gap: 10px;
+            gap: 20px;
+            min-height: 0;
         }
 
         /* Conversation List */
         .conversation-list {
-            width: 350px;
-            border: 1px solid #00ff00;
-            background: #0f0f0f;
+            width: 380px;
+            border: 1px solid var(--accent-green-muted);
+            background: var(--bg-secondary);
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            border-radius: 8px;
         }
 
         .list-header {
-            background: #1a1a1a;
-            padding: 10px;
-            border-bottom: 1px solid #00ff00;
-            color: #ffb000;
+            background: var(--bg-tertiary);
+            padding: 12px 15px;
+            border-bottom: 1px solid var(--border-primary);
+            color: var(--accent-orange);
             display: flex;
             justify-content: space-between;
             align-items: center;
+            font-weight: 600;
+            font-size: 13px;
         }
 
         .list-controls {
@@ -99,31 +251,36 @@ class ViewerGenerator:
         }
 
         .small-btn {
-            background: #1a1a1a;
-            border: 1px solid #666;
-            color: #666;
-            padding: 2px 6px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            color: var(--text-secondary);
+            padding: 4px 8px;
             cursor: pointer;
             font-family: inherit;
-            font-size: 10px;
+            font-size: 11px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+            font-weight: 500;
         }
 
         .small-btn:hover {
-            background: #222;
-            color: #888;
+            background: var(--hover-bg);
+            color: var(--text-primary);
+            border-color: var(--accent-green-muted);
         }
 
         .small-btn.active {
-            background: #333;
-            color: #ffb000;
-            border-color: #ffb000;
+            background: var(--accent-orange);
+            color: var(--bg-primary);
+            border-color: var(--accent-orange);
         }
 
         .small-btn:disabled {
-            background: #111;
-            color: #444;
-            border-color: #444;
+            background: var(--bg-primary);
+            color: var(--text-muted);
+            border-color: var(--border-secondary);
             cursor: not-allowed;
+            opacity: 0.6;
         }
 
         .conversation-items {
@@ -132,19 +289,24 @@ class ViewerGenerator:
         }
 
         .conversation-item {
-            padding: 10px;
-            border-bottom: 1px solid #333;
+            padding: 12px 15px;
+            border-bottom: 1px solid var(--border-secondary);
             cursor: pointer;
-            transition: background 0.2s;
+            transition: all 0.2s ease;
+            background: transparent;
+        }
+
+        .conversation-item[data-display-default="false"] {
+            display: none;
         }
 
         .conversation-item:hover {
-            background: #1a1a1a;
+            background: var(--hover-bg);
         }
 
         .conversation-item.active {
-            background: #222;
-            border-left: 3px solid #ffb000;
+            background: var(--active-bg);
+            border-left: 4px solid var(--accent-orange);
         }
 
         .conversation-item .conversation-header {
@@ -152,46 +314,49 @@ class ViewerGenerator:
         }
 
         .conversation-item .session-id {
-            color: #00ff00;
-            font-weight: bold;
+            color: var(--accent-green);
+            font-weight: 600;
             font-size: 11px;
+            font-family: 'SF Mono', 'Monaco', monospace;
         }
 
         .conversation-item .conversation-title {
-            color: #fff;
-            font-weight: normal;
-            margin-top: 3px;
-            font-size: 13px;
-            line-height: 1.3;
+            color: var(--text-primary);
+            font-weight: 500;
+            margin-top: 4px;
+            font-size: 14px;
+            line-height: 1.4;
         }
 
         .conversation-item .conversation-meta {
-            color: #888;
-            font-size: 11px;
+            color: var(--text-secondary);
+            font-size: 12px;
         }
 
         .conversation-item .meta-line {
-            margin-bottom: 2px;
+            margin-bottom: 3px;
         }
 
         .conversation-item .meta-label {
-            color: #666;
-            font-weight: bold;
+            color: var(--text-muted);
+            font-weight: 600;
         }
 
         .conversation-item .continuation-marker {
-            color: #ffb000;
+            color: var(--accent-orange);
             font-size: 10px;
+            font-weight: 600;
         }
 
         .conversation-item .snapshot-marker {
-            color: #888;
+            color: var(--text-muted);
             font-size: 10px;
+            font-weight: 600;
         }
 
         .conversation-item.hidden {
-            opacity: 0.5;
-            background: #0a0a0a !important;
+            opacity: 0.6;
+            background: var(--bg-primary) !important;
         }
 
         .conversation-item .conversation-actions {
@@ -204,48 +369,52 @@ class ViewerGenerator:
         }
 
         .conversation-actions button {
-            background: none;
-            border: 1px solid #444;
-            color: #888;
-            padding: 1px 4px;
+            background: transparent;
+            border: 1px solid var(--border-primary);
+            color: var(--text-secondary);
+            padding: 2px 6px;
             cursor: pointer;
             font-family: inherit;
-            font-size: 9px;
-            margin-right: 5px;
+            font-size: 10px;
+            margin-right: 6px;
+            border-radius: 3px;
+            transition: all 0.2s ease;
         }
 
         .conversation-actions button:hover {
-            color: #ffb000;
-            border-color: #ffb000;
+            color: var(--accent-orange);
+            border-color: var(--accent-orange);
+            background: var(--hover-bg);
         }
 
         /* Conversation View */
         .conversation-view {
             flex: 1;
-            border: 1px solid #00ff00;
-            background: #0f0f0f;
+            border: 1px solid var(--accent-green-muted);
+            background: var(--bg-secondary);
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            border-radius: 8px;
         }
 
         .view-header {
-            background: #1a1a1a;
-            padding: 10px;
-            border-bottom: 1px solid #00ff00;
+            background: var(--bg-tertiary);
+            padding: 15px;
+            border-bottom: 1px solid var(--border-primary);
         }
 
         .view-title-main {
-            font-size: 16px;
-            color: #fff;
-            margin-bottom: 4px;
-            font-weight: bold;
+            font-size: 18px;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+            font-weight: 600;
         }
 
         .view-title-meta {
-            font-size: 12px;
-            color: #888;
-            font-weight: normal;
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 400;
         }
 
         .view-controls {
@@ -262,23 +431,29 @@ class ViewerGenerator:
         }
 
         .btn {
-            background: #1a1a1a;
-            border: 1px solid #00ff00;
-            color: #00ff00;
-            padding: 5px 10px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--accent-green-muted);
+            color: var(--accent-green);
+            padding: 8px 16px;
             cursor: pointer;
-            margin-right: 10px;
+            margin-right: 12px;
             font-family: inherit;
             font-size: 12px;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+            font-weight: 500;
         }
 
         .btn:hover {
-            background: #222;
+            background: var(--hover-bg);
+            border-color: var(--accent-green);
         }
 
         .btn.active {
-            background: #00ff00;
-            color: #0c0c0c;
+            background: var(--accent-green);
+            color: var(--bg-primary);
+            border-color: var(--accent-green);
+            font-weight: 600;
         }
 
         /* Messages - Claude Code Style */
@@ -286,8 +461,9 @@ class ViewerGenerator:
             padding: 20px;
             overflow-y: auto;
             flex: 1;
-            font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Fira Code', 'Consolas', 'Liberation Mono', monospace;
+            font-family: system-ui, -apple-system, 'SF Mono', 'Monaco', 'Cascadia Code', 'Fira Code', 'Consolas', 'Liberation Mono', monospace;
             line-height: 1.6;
+            background: var(--bg-primary);
         }
 
         .message {
@@ -315,19 +491,19 @@ class ViewerGenerator:
         }
 
         /* Claude Code message type prefixes */
-        .message.user .message-prefix { color: #00ff00; }
+        .message.user .message-prefix { color: var(--accent-green); }
         .message.user .message-prefix::before { content: ">"; }
 
-        .message.assistant .message-prefix { color: #ffffff; }
+        .message.assistant .message-prefix { color: var(--text-primary); }
         .message.assistant .message-prefix::before { content: "●"; }
 
-        .message.thinking .message-prefix { color: #666666; }
+        .message.thinking .message-prefix { color: var(--text-muted); }
         .message.thinking .message-prefix::before { content: "*"; }
 
-        .message.tool .message-prefix { color: #00ff00; }
+        .message.tool .message-prefix { color: var(--accent-green); }
         .message.tool .message-prefix::before { content: "●"; }
 
-        .message.system .message-prefix { color: #444444; }
+        .message.system .message-prefix { color: var(--text-muted); }
         .message.system .message-prefix::before { content: "◆"; }
 
         .message.agent .message-prefix { color: #8b5cf6; }
@@ -346,7 +522,7 @@ class ViewerGenerator:
         }
 
         .message.thinking .message-content {
-            color: #666666;
+            color: var(--text-muted);
             font-style: italic;
         }
 
@@ -358,18 +534,19 @@ class ViewerGenerator:
 
         /* Thinking block special handling */
         .thinking-indicator {
-            color: #666666;
+            color: var(--text-muted);
             font-style: italic;
             cursor: pointer;
             user-select: none;
+            transition: color 0.2s ease;
         }
 
         .thinking-indicator:hover {
-            color: #888888;
+            color: var(--text-secondary);
         }
 
         .thinking-content {
-            color: #666666;
+            color: var(--text-muted);
             font-style: italic;
             margin-left: 32px;
             padding: 8px 0;
@@ -382,15 +559,17 @@ class ViewerGenerator:
 
         /* Todo list rendering */
         .todo-list {
-            margin: 10px 0 10px 32px;
-            padding: 10px;
-            border-left: 2px solid #666;
+            margin: 12px 0 12px 32px;
+            padding: 12px;
+            border-left: 3px solid var(--accent-orange);
+            background: var(--bg-secondary);
+            border-radius: 6px;
         }
 
         .todo-header {
-            color: #ffb000;
-            margin-bottom: 8px;
-            font-weight: bold;
+            color: var(--accent-orange);
+            margin-bottom: 10px;
+            font-weight: 600;
         }
 
         .todo-item {
@@ -515,14 +694,124 @@ class ViewerGenerator:
             overflow-y: auto;
         }
 
+        /* Markdown Content Styles */
+        .markdown-content {
+            line-height: 1.6;
+        }
+
+        .markdown-content h1,
+        .markdown-content h2,
+        .markdown-content h3,
+        .markdown-content h4,
+        .markdown-content h5,
+        .markdown-content h6 {
+            color: var(--text-primary);
+            font-weight: 600;
+            margin: 16px 0 8px 0;
+        }
+
+        .markdown-content h1 { font-size: 24px; }
+        .markdown-content h2 { font-size: 20px; }
+        .markdown-content h3 { font-size: 18px; }
+        .markdown-content h4 { font-size: 16px; }
+        .markdown-content h5 { font-size: 14px; }
+        .markdown-content h6 { font-size: 13px; }
+
+        .markdown-content p {
+            margin: 8px 0;
+        }
+
+        .markdown-content ul,
+        .markdown-content ol {
+            margin: 8px 0;
+            padding-left: 24px;
+        }
+
+        .markdown-content li {
+            margin: 4px 0;
+        }
+
+        .markdown-content blockquote {
+            border-left: 3px solid var(--accent-green);
+            padding-left: 12px;
+            margin: 12px 0;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        .markdown-content code {
+            background: var(--bg-secondary);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+            font-size: 13px;
+            color: var(--accent-green);
+        }
+
+        .markdown-content pre {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 12px 0;
+            overflow-x: auto;
+            font-size: 13px;
+        }
+
+        .markdown-content pre code {
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+            color: inherit;
+        }
+
+        .markdown-content a {
+            color: var(--accent-green);
+            text-decoration: underline;
+            transition: color 0.2s ease;
+        }
+
+        .markdown-content a:hover {
+            color: var(--accent-green-muted);
+        }
+
+        .markdown-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 12px 0;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .markdown-content th,
+        .markdown-content td {
+            border: 1px solid var(--border-primary);
+            padding: 8px 12px;
+            text-align: left;
+        }
+
+        .markdown-content th {
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .markdown-content hr {
+            border: none;
+            border-top: 1px solid var(--border-primary);
+            margin: 20px 0;
+        }
+
         /* Code blocks */
         .code-block {
-            background: #1a1a1a;
-            border: 1px solid #333;
-            padding: 10px;
-            margin: 10px 0;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 12px 0;
             overflow-x: auto;
-            font-size: 12px;
+            font-size: 13px;
         }
 
         /* Tool blocks (individual tools in groups) */
@@ -575,30 +864,143 @@ class ViewerGenerator:
 
         /* Scrollbar */
         ::-webkit-scrollbar {
-            width: 10px;
-            height: 10px;
+            width: 8px;
+            height: 8px;
         }
 
         ::-webkit-scrollbar-track {
-            background: #1a1a1a;
+            background: var(--bg-secondary);
+            border-radius: 4px;
         }
 
         ::-webkit-scrollbar-thumb {
-            background: #444;
-            border-radius: 5px;
+            background: var(--border-primary);
+            border-radius: 4px;
+            transition: background 0.2s ease;
         }
 
         ::-webkit-scrollbar-thumb:hover {
-            background: #555;
+            background: var(--text-muted);
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1200px) {
+            .container {
+                padding: 16px;
+                max-width: 100%;
+            }
+
+            .conversation-list {
+                width: 320px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 12px;
+                gap: 16px;
+            }
+
+            .main-content {
+                flex-direction: column;
+                gap: 16px;
+            }
+
+            .conversation-list {
+                width: 100%;
+                max-height: 300px;
+            }
+
+            .unified-header {
+                padding: 16px;
+            }
+
+            .project-title {
+                font-size: 20px;
+            }
+
+            .stat-group {
+                gap: 16px;
+            }
+
+            .stat-item {
+                min-width: 60px;
+                padding: 6px 10px;
+            }
+
+            .filter-controls {
+                gap: 8px;
+            }
+
+            .filter-btn {
+                padding: 6px 12px;
+                font-size: 11px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 8px;
+            }
+
+            .container {
+                padding: 0;
+                gap: 12px;
+            }
+
+            .unified-header {
+                padding: 12px;
+                border-radius: 8px;
+            }
+
+            .project-title {
+                font-size: 18px;
+            }
+
+            .stat-group {
+                gap: 12px;
+            }
+
+            .filter-btn {
+                padding: 4px 8px;
+                font-size: 10px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>▓▓▓ CLAUDE CODE CONVERSATIONS ▓▓▓</h1>
-            <div class="stats" id="stats">
-                Loading archive data...
+        <div class="unified-header" id="unifiedHeader">
+            <div class="header-main">
+                <h1 class="project-title">Claude Code Archive</h1>
+                <div class="project-path" id="projectPath">Loading archive data...</div>
+            </div>
+            <div class="statistics-inline" id="statisticsInline" style="display: none;">
+                <div class="stat-group">
+                    <span class="stat-item">
+                        <span class="stat-value" id="totalCount">0</span>
+                        <span class="stat-label">conversations</span>
+                    </span>
+                    <span class="stat-item">
+                        <span class="stat-value" id="totalMessages">0</span>
+                        <span class="stat-label">messages</span>
+                    </span>
+                    <span class="stat-item">
+                        <span class="stat-value" id="dateRange">-</span>
+                        <span class="stat-label">date range</span>
+                    </span>
+                </div>
+                <div class="filter-controls" id="filterControls">
+                    <button class="filter-btn" id="btnSDK" onclick="toggleConversationType('sdk_generated')">Show SDK</button>
+                    <button class="filter-btn" id="btnSubagents" onclick="toggleConversationType('subagent_sidechain')">Toggle Subagents</button>
+                    <button class="filter-btn" id="btnSnapshots" onclick="toggleConversationType('snapshot')">Show Snapshots</button>
+                    <button class="filter-btn" id="btnCompletions" onclick="toggleConversationType('completion_marker')">Show Completions</button>
+                    <button class="filter-btn" id="btnShowAll" onclick="showAllTypes()">Show All</button>
+                    <button class="filter-btn warning" id="btnHideAll" onclick="hideAllTypes()">Hide All</button>
+                </div>
+            </div>
+            <div class="type-breakdown" id="typeBreakdown" style="display: none;">
+                <!-- Type breakdown will be populated by JavaScript -->
             </div>
         </div>
 
@@ -647,15 +1049,84 @@ class ViewerGenerator:
         let hiddenConversations = new Set();  // Track hidden conversations
         let hasUnsavedChanges = false;  // Track if there are unsaved changes
 
+        // Conversation type visibility - tracks which types are currently visible
+        let visibleTypes = {
+            'original': true,
+            'true_continuation': true,
+            'multi_agent_workflow': true,
+            'sdk_generated': false,  // Hidden by default - major discovery!
+            'subagent_sidechain': true,
+            'context_history': false,
+            'completion_marker': false,
+            'snapshot': false,
+            'auto_linked': true,
+            'post_compaction': true
+        };
+
+        // Initialize markdown renderer
+        function initializeMarkdown() {
+            if (typeof marked !== 'undefined' && typeof hljs !== 'undefined') {
+                marked.setOptions({
+                    highlight: function(code, lang) {
+                        if (lang && hljs.getLanguage(lang)) {
+                            try {
+                                return hljs.highlight(code, { language: lang }).value;
+                            } catch (err) {}
+                        }
+                        return hljs.highlightAuto(code).value;
+                    },
+                    breaks: true,
+                    gfm: true
+                });
+            }
+        }
+
+        // Render markdown content
+        function renderMarkdown(text) {
+            if (typeof marked !== 'undefined') {
+                try {
+                    return marked.parse(text);
+                } catch (error) {
+                    console.warn('Markdown parsing error:', error);
+                    return escapeHtml(text);
+                }
+            }
+            return escapeHtml(text);
+        }
+
+        // Check if text appears to be markdown
+        function isMarkdownContent(text) {
+            if (!text || typeof text !== 'string') return false;
+
+            // Simple heuristics to detect markdown
+            const markdownIndicators = [
+                /^#{1,6}\\s+/m,           // Headers
+                /\\*\\*.*?\\*\\*/,           // Bold
+                /\\*.*?\\*/,               // Italic
+                /`.*?`/,                 // Inline code
+                /^```/m,                 // Code blocks
+                /^\\* /m,                 // Unordered lists
+                /^\\d+\\. /m,              // Ordered lists
+                /^\\> /m,                 // Blockquotes
+                /\\[.*?\\]\\(.*?\\)/         // Links
+            ];
+
+            return markdownIndicators.some(regex => regex.test(text));
+        }
+
         // Initialize on startup
         async function initializeViewer() {
             try {
+                initializeMarkdown();
+
                 // Fetch manifest.json from the same directory
                 const response = await fetch('manifest.json');
                 manifest = await response.json();
                 hiddenConversations = new Set(manifest.hidden_conversations || []);
                 displayStats();
+                displayConversationStatistics();
                 displayConversationList();
+                updateFilterButtons();
             } catch (error) {
                 console.error('Failed to load manifest:', error);
                 document.getElementById('conversationList').innerHTML = '<div style="color: #ff0000;">Failed to load manifest.json</div>';
@@ -663,13 +1134,113 @@ class ViewerGenerator:
         }
 
         function displayStats() {
-            const stats = document.getElementById('stats');
-            stats.innerHTML = `
-                Project: <span style="color: #ffb000">${manifest.project_path}</span> |
-                Conversations: <span style="color: #ffb000">${manifest.conversation_count}</span> |
-                Total Messages: <span style="color: #ffb000">${manifest.total_messages}</span> |
-                Created: <span style="color: #888">${new Date(manifest.created_at).toLocaleString()}</span>
-            `;
+            // Update project path
+            const projectPath = document.getElementById('projectPath');
+            projectPath.textContent = manifest.project_path;
+
+            // Update inline statistics
+            document.getElementById('totalMessages').textContent = manifest.total_messages?.toLocaleString() || 0;
+
+            // Calculate and display date range
+            if (manifest.conversations && manifest.conversations.length > 0) {
+                const dates = manifest.conversations
+                    .filter(c => c.first_timestamp)
+                    .map(c => new Date(c.first_timestamp))
+                    .sort((a, b) => a - b);
+
+                if (dates.length > 0) {
+                    const firstDate = dates[0];
+                    const lastDate = dates[dates.length - 1];
+                    const dateRange = firstDate.toLocaleDateString() +
+                        (firstDate.getTime() !== lastDate.getTime() ? ' - ' + lastDate.toLocaleDateString() : '');
+                    document.getElementById('dateRange').textContent = dateRange;
+                }
+            }
+        }
+
+        function displayConversationStatistics() {
+            const statisticsInline = document.getElementById('statisticsInline');
+            const breakdownElement = document.getElementById('typeBreakdown');
+
+            if (!manifest.conversation_statistics) {
+                return;
+            }
+
+            const stats = manifest.conversation_statistics;
+            const byType = stats.by_type || {};
+
+            // Show statistics inline section
+            statisticsInline.style.display = 'flex';
+
+            // Update summary counts
+            document.getElementById('totalCount').textContent = stats.total_count || 0;
+
+            // Create type breakdown display
+            const typeDisplayNames = {
+                'original': 'Original',
+                'true_continuation': 'True Continuations',
+                'multi_agent_workflow': 'Multi-Agent Workflows',
+                'sdk_generated': 'SDK-Generated',
+                'subagent_sidechain': 'Subagent Sidechains',
+                'context_history': 'Context History',
+                'completion_marker': 'Completion Markers',
+                'snapshot': 'Snapshots',
+                'auto_linked': 'Auto Linked',
+                'post_compaction': 'Post Compaction'
+            };
+
+            let breakdownHTML = '';
+            let linePrefix = '';
+            const typeKeys = Object.keys(typeDisplayNames);
+
+            typeKeys.forEach((typeKey, index) => {
+                const count = byType[typeKey] || 0;
+                if (count === 0) return;
+
+                const isLast = index === typeKeys.length - 1 || typeKeys.slice(index + 1).every(k => (byType[k] || 0) === 0);
+                linePrefix = isLast ? '└─' : '├─';
+
+                const displayName = typeDisplayNames[typeKey];
+                const isVisible = visibleTypes[typeKey];
+                const statusText = isVisible ? '(shown)' : '(hidden)';
+                const statusClass = isVisible ? 'shown' : 'hidden';
+
+                // Highlight SDK-generated as major discovery
+                const countDisplay = typeKey === 'sdk_generated' && count > 0 ?
+                    `<span class="type-count">${count}+</span> <span style="color: #ff8800;">← Major discovery!</span>` :
+                    `<span class="type-count">${count}</span>`;
+
+                breakdownHTML += `
+                    <div class="type-item">
+                        ${linePrefix} ${displayName}: ${countDisplay} <span class="type-status">${statusText}</span>
+                    </div>
+                `;
+            });
+
+            breakdownElement.innerHTML = breakdownHTML;
+            if (breakdownHTML.trim()) {
+                breakdownElement.style.display = 'block';
+            }
+        }
+
+        function calculateShownCount() {
+            if (!manifest || !manifest.conversations) return 0;
+            return manifest.conversations.filter(conv => {
+                const type = conv.conversation_type || 'original';
+                const isHidden = hiddenConversations.has(conv.session_id);
+                const isTypeVisible = visibleTypes[type];
+                return !isHidden && isTypeVisible;
+            }).length;
+        }
+
+        function calculateHiddenCount() {
+            if (!manifest || !manifest.conversations) return 0;
+            return manifest.conversations.filter(conv => {
+                const type = conv.conversation_type || 'original';
+                const isHidden = hiddenConversations.has(conv.session_id);
+                const isTypeVisible = visibleTypes[type];
+                return isHidden || !isTypeVisible;
+            }).length;
         }
 
         function displayConversationList() {
@@ -678,8 +1249,10 @@ class ViewerGenerator:
             listContainer.innerHTML = '';
 
             manifest.conversations.forEach(conv => {
-                // Skip snapshots by default unless showing all
-                if (!showSnapshots && conv.conversation_type === 'snapshot') {
+                const conversationType = conv.conversation_type || 'original';
+
+                // Skip conversations based on type visibility
+                if (!visibleTypes[conversationType]) {
                     return;
                 }
 
@@ -691,6 +1264,11 @@ class ViewerGenerator:
 
                 const item = document.createElement('div');
                 item.className = 'conversation-item';
+
+                // Add data attributes for filtering
+                item.setAttribute('data-type', conversationType);
+                item.setAttribute('data-display-default', visibleTypes[conversationType] ? 'true' : 'false');
+
                 if (conv.conversation_type === 'snapshot') {
                     item.className += ' snapshot';
                 }
@@ -1097,9 +1675,15 @@ ${escapeHtml(entry.summary || 'No summary available')}
                         agentLabel = '<span class="agent-label">[Agent]</span> ';
                     }
 
+                    // Check if content should be rendered as markdown
+                    const shouldRenderMarkdown = isMarkdownContent(mainContent);
+                    const contentHtml = shouldRenderMarkdown ?
+                        renderMarkdown(mainContent) :
+                        escapeHtml(mainContent);
+
                     messageDiv.innerHTML = `
                         <span class="message-prefix"></span>
-                        <span class="message-content">${agentLabel}${escapeHtml(mainContent)}</span>
+                        <span class="message-content ${shouldRenderMarkdown ? 'markdown-content' : ''}">${agentLabel}${contentHtml}</span>
                     `;
                     container.appendChild(messageDiv);
                 }
@@ -1312,16 +1896,17 @@ ${escapeHtml(entry.summary || 'No summary available')}
         }
 
         function toggleShowSnapshots() {
-            showSnapshots = !showSnapshots;
+            // Use the new type-based filtering system
+            toggleConversationType('snapshot');
+            // Keep old button behavior for backwards compatibility
             const btn = document.getElementById('showSnapshotsBtn');
-            if (showSnapshots) {
+            if (visibleTypes['snapshot']) {
                 btn.classList.add('active');
                 btn.textContent = 'All';
             } else {
                 btn.classList.remove('active');
                 btn.textContent = 'Snapshots';
             }
-            displayConversationList();
         }
 
         function toggleShowHidden() {
@@ -1335,6 +1920,74 @@ ${escapeHtml(entry.summary || 'No summary available')}
                 btn.textContent = 'Hidden';
             }
             displayConversationList();
+            displayConversationStatistics();
+        }
+
+        // Filter control functions
+        function toggleConversationType(type) {
+            visibleTypes[type] = !visibleTypes[type];
+            displayConversationList();
+            displayConversationStatistics();
+            updateFilterButtons();
+        }
+
+        function showAllTypes() {
+            Object.keys(visibleTypes).forEach(type => {
+                visibleTypes[type] = true;
+            });
+            displayConversationList();
+            displayConversationStatistics();
+            updateFilterButtons();
+        }
+
+        function hideAllTypes() {
+            Object.keys(visibleTypes).forEach(type => {
+                visibleTypes[type] = false;
+            });
+            // Keep 'original' visible to avoid empty list
+            visibleTypes['original'] = true;
+            displayConversationList();
+            displayConversationStatistics();
+            updateFilterButtons();
+        }
+
+        function updateFilterButtons() {
+            // Update button states based on visibility
+            const buttons = {
+                'btnSDK': 'sdk_generated',
+                'btnSubagents': 'subagent_sidechain',
+                'btnSnapshots': 'snapshot',
+                'btnCompletions': 'completion_marker'
+            };
+
+            Object.keys(buttons).forEach(btnId => {
+                const btn = document.getElementById(btnId);
+                const type = buttons[btnId];
+                if (btn) {
+                    if (visibleTypes[type]) {
+                        btn.classList.add('active');
+                        if (btnId === 'btnSDK') btn.textContent = 'Hide SDK';
+                        else if (btnId === 'btnSnapshots') btn.textContent = 'Hide Snapshots';
+                        else if (btnId === 'btnCompletions') btn.textContent = 'Hide Completions';
+                    } else {
+                        btn.classList.remove('active');
+                        if (btnId === 'btnSDK') btn.textContent = 'Show SDK';
+                        else if (btnId === 'btnSnapshots') btn.textContent = 'Show Snapshots';
+                        else if (btnId === 'btnCompletions') btn.textContent = 'Show Completions';
+                    }
+                }
+            });
+
+            // Update Show All / Hide All button states
+            const allVisible = Object.values(visibleTypes).every(v => v);
+            const showAllBtn = document.getElementById('btnShowAll');
+            if (showAllBtn) {
+                if (allVisible) {
+                    showAllBtn.classList.add('active');
+                } else {
+                    showAllBtn.classList.remove('active');
+                }
+            }
         }
 
         function updateSaveButton() {

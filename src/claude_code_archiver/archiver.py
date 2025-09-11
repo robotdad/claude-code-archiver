@@ -40,7 +40,10 @@ class ArchiveManifest(BaseModel):
 
     # Sidechain and message tracking
     sidechain_relationships: dict[str, list[str]] | None = None  # Session ID -> list of sidechain session IDs
+    subagent_relationships: dict[str, Any] | None = None  # Subagent parent-child relationships
+    cross_session_chains: dict[str, list[str]] | None = None  # Cross-session threading chains
     aggregate_statistics: dict[str, Any] | None = None  # Aggregate stats across all conversations
+    conversation_statistics: dict[str, Any] | None = None  # Statistics by conversation type
 
 
 class Archiver:
@@ -214,8 +217,8 @@ class Archiver:
                 # Get the corresponding conversation object
                 conv = conversations[idx]
 
-                # Check for internal compaction (new pattern discovered in e22b2cf8)
-                has_internal_compaction = self._has_internal_compaction(conv.path)
+                # Check for internal compaction (new pattern discovered in e22b2cf8) - not used in current classification
+                # has_internal_compaction = self._has_internal_compaction(conv.path)
 
                 # Check if this is auto-linked vs true continuation
                 is_auto_linked = False
@@ -223,26 +226,35 @@ class Archiver:
                     # Check if it's auto-linked (brief summary) vs true continuation
                     is_auto_linked = self._is_auto_linked_conversation(conv.path)
 
-                # Determine conversation type for viewer
-                if session_id in snapshot_ids:
+                # Determine conversation type for viewer (EXPANDED CLASSIFICATION SYSTEM)
+                # PRIORITY ORDER (highest to lowest):
+                if conv.is_sdk_generated:
+                    manifest_conv["conversation_type"] = "sdk_generated"
+                    manifest_conv["display_by_default"] = False
+                elif session_id in snapshot_ids:
                     manifest_conv["conversation_type"] = "snapshot"
                     manifest_conv["display_by_default"] = False
                 elif manifest_conv.get("is_post_compaction"):
-                    # True continuation after compaction
                     manifest_conv["conversation_type"] = "post_compaction"
                     manifest_conv["display_by_default"] = True
-                elif is_auto_linked and has_internal_compaction:
-                    # Auto-linked conversation that later has internal compaction
-                    manifest_conv["conversation_type"] = "auto_linked_with_internal_compaction"
+                elif conv.continuation_confidence > 0.8:
+                    manifest_conv["conversation_type"] = "true_continuation"
                     manifest_conv["display_by_default"] = True
-                elif is_auto_linked:
-                    # Auto-linked new conversation in project chain
+                elif conv.continuation_type == "context_history":
+                    manifest_conv["conversation_type"] = "context_history"
+                    manifest_conv["display_by_default"] = False
+                elif conv.has_sidechains and conv.sidechain_count >= 3:
+                    manifest_conv["conversation_type"] = "multi_agent_workflow"
+                    manifest_conv["display_by_default"] = True
+                elif getattr(conv, "is_subagent_sidechain", False):
+                    manifest_conv["conversation_type"] = "subagent_sidechain"
+                    manifest_conv["display_by_default"] = False  # Or configurable later
+                elif is_auto_linked and not conv.starts_with_summary:
                     manifest_conv["conversation_type"] = "auto_linked"
                     manifest_conv["display_by_default"] = True
-                elif manifest_conv["starts_with_summary"] and not manifest_conv["is_continuation"]:
-                    # This is like cfbe2049 - has summary but is not a continuation in chains
-                    manifest_conv["conversation_type"] = "pre_compaction"
-                    manifest_conv["display_by_default"] = True
+                elif conv.is_completion_marker:
+                    manifest_conv["conversation_type"] = "completion_marker"
+                    manifest_conv["display_by_default"] = False
                 else:
                     manifest_conv["conversation_type"] = "original"
                     manifest_conv["display_by_default"] = True
@@ -257,8 +269,15 @@ class Archiver:
             # Build sidechain relationships map
             sidechain_relationships = self._build_sidechain_relationships(conversations)
 
+            # Build subagent cross-session relationships
+            subagent_relationships = self._build_subagent_relationships(conversations)
+            cross_session_chains = self._build_cross_session_chains(conversations)
+
             # Calculate aggregate statistics
             aggregate_stats = self._calculate_aggregate_statistics(manifest_conversations)
+
+            # Calculate conversation statistics by type for viewer header
+            conversation_stats = self._calculate_conversation_statistics(manifest_conversations)
 
             # Create manifest
             manifest = ArchiveManifest(
@@ -276,7 +295,10 @@ class Archiver:
                 user_metadata={},  # Empty user metadata initially
                 last_refresh=None,  # No refresh yet
                 sidechain_relationships=sidechain_relationships,
+                subagent_relationships=subagent_relationships,
+                cross_session_chains=cross_session_chains,
                 aggregate_statistics=aggregate_stats,
+                conversation_statistics=conversation_stats,
             )
 
             # Write manifest
@@ -579,6 +601,44 @@ class Archiver:
 
         return relationships if relationships else {}
 
+    def _build_subagent_relationships(self, conversations: list[ConversationFile]) -> dict[str, Any]:
+        """Build subagent parent-child relationships from conversations.
+
+        Args:
+            conversations: List of conversation files
+
+        Returns:
+            Dictionary with subagent relationship data
+        """
+        subagent_relationships: dict[str, Any] = {}
+
+        for conv in conversations:
+            if conv.child_session_ids:
+                subagent_relationships[conv.session_id] = {
+                    "child_sessions": conv.child_session_ids,
+                    "invocation_count": len(conv.subagent_invocations),
+                    "subagent_types": conv.sidechain_metadata.get("subagent_types", []),
+                }
+
+        return subagent_relationships
+
+    def _build_cross_session_chains(self, conversations: list[ConversationFile]) -> dict[str, list[str]]:
+        """Build cross-session threading chains from conversations.
+
+        Args:
+            conversations: List of conversation files
+
+        Returns:
+            Dictionary mapping child session IDs to their parent session IDs
+        """
+        cross_session_chains: dict[str, list[str]] = {}
+
+        for conv in conversations:
+            if conv.parent_session_ids:
+                cross_session_chains[conv.session_id] = conv.parent_session_ids
+
+        return cross_session_chains
+
     def _calculate_aggregate_statistics(self, manifest_conversations: list[dict[str, Any]]) -> dict[str, Any]:
         """Calculate aggregate statistics across all conversations.
 
@@ -630,6 +690,47 @@ class Archiver:
                 mcp_tools[tool_name] = mcp_tools.get(tool_name, 0) + count
 
         return aggregate
+
+    def _calculate_conversation_statistics(self, manifest_conversations: list[dict[str, Any]]) -> dict[str, Any]:
+        """Calculate conversation statistics by type for the viewer header.
+
+        Args:
+            manifest_conversations: List of conversation manifests with types
+
+        Returns:
+            Dictionary with conversation statistics by type
+        """
+        # Count conversations by type
+        type_counts: dict[str, int] = {}
+        shown_count = 0
+        hidden_count = 0
+
+        for conv in manifest_conversations:
+            conv_type = conv.get("conversation_type", "original")
+            type_counts[conv_type] = type_counts.get(conv_type, 0) + 1
+
+            if conv.get("display_by_default", True):
+                shown_count += 1
+            else:
+                hidden_count += 1
+
+        return {
+            "total_count": len(manifest_conversations),
+            "shown_count": shown_count,
+            "hidden_count": hidden_count,
+            "by_type": {
+                "original": type_counts.get("original", 0),
+                "true_continuation": type_counts.get("true_continuation", 0),
+                "sdk_generated": type_counts.get("sdk_generated", 0),
+                "multi_agent_workflow": type_counts.get("multi_agent_workflow", 0),
+                "subagent_sidechain": type_counts.get("subagent_sidechain", 0),
+                "context_history": type_counts.get("context_history", 0),
+                "completion_marker": type_counts.get("completion_marker", 0),
+                "snapshot": type_counts.get("snapshot", 0),
+                "auto_linked": type_counts.get("auto_linked", 0),
+                "post_compaction": type_counts.get("post_compaction", 0),
+            },
+        }
 
     def refresh_archive(
         self,
