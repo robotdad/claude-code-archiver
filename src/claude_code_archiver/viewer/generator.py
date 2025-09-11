@@ -491,11 +491,21 @@ class ViewerGenerator:
         }
 
         /* Claude Code message type prefixes */
-        .message.user .message-prefix { color: var(--accent-green); }
+        .message.user .message-prefix { color: var(--accent-green); font-weight: 600; }
         .message.user .message-prefix::before { content: ">"; }
+        .message.user .message-content {
+            background: rgba(125, 216, 125, 0.05);
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 4px;
+        }
 
-        .message.assistant .message-prefix { color: var(--text-primary); }
+        .message.assistant .message-prefix { color: var(--text-primary); font-weight: 600; }
         .message.assistant .message-prefix::before { content: "●"; }
+        .message.assistant .message-content {
+            padding: 8px;
+            margin-top: 4px;
+        }
 
         .message.thinking .message-prefix { color: var(--text-muted); }
         .message.thinking .message-prefix::before { content: "*"; }
@@ -971,6 +981,10 @@ class ViewerGenerator:
 <body>
     <div class="container">
         <div class="unified-header" id="unifiedHeader">
+            <div class="top-menu-bar">
+                <button class="menu-btn" id="exportArchiveBtn" onclick="exportArchive()">Export Archive</button>
+                <button class="menu-btn primary" id="saveChangesBtn" onclick="saveChanges()">Save Changes</button>
+            </div>
             <div class="header-main">
                 <h1 class="project-title">Claude Code Archive</h1>
                 <div class="project-path" id="projectPath">Loading archive data...</div>
@@ -991,12 +1005,11 @@ class ViewerGenerator:
                     </span>
                 </div>
                 <div class="filter-controls" id="filterControls">
-                    <button class="filter-btn" id="btnSDK" onclick="toggleConversationType('sdk_generated')">Show SDK</button>
-                    <button class="filter-btn" id="btnSubagents" onclick="toggleConversationType('multi_agent_workflow')">Toggle Subagents</button>
-                    <button class="filter-btn" id="btnSnapshots" onclick="toggleConversationType('snapshot')">Show Snapshots</button>
-                    <button class="filter-btn" id="btnCompletions" onclick="toggleConversationType('completion_marker')">Show Completions</button>
-                    <button class="filter-btn" id="btnShowAll" onclick="showAllTypes()">Show All</button>
-                    <button class="filter-btn warning" id="btnHideAll" onclick="hideAllTypes()">Hide All</button>
+                    <button class="filter-btn master-toggle" id="btnMasterToggle" onclick="toggleAllVisibility()">Show/Hide All</button>
+                    <button class="filter-btn" id="btnSDK" onclick="toggleConversationType('sdk_generated')">SDK <span class="count">(0)</span></button>
+                    <button class="filter-btn" id="btnSubagents" onclick="toggleConversationType('multi_agent_workflow')">Subagents <span class="count">(0)</span></button>
+                    <button class="filter-btn" id="btnSnapshots" onclick="toggleConversationType('snapshot')">Snapshots <span class="count">(0)</span></button>
+                    <button class="filter-btn" id="btnCompletions" onclick="toggleConversationType('completion_marker')">Completions <span class="count">(0)</span></button>
                 </div>
             </div>
             <div class="type-breakdown" id="typeBreakdown" style="display: none;">
@@ -1007,11 +1020,9 @@ class ViewerGenerator:
         <div class="main-content">
             <div class="conversation-list">
                 <div class="list-header">
-                    <span>[CONVERSATIONS]</span>
-                    <div class="list-controls">
-                        <button class="small-btn" id="showSnapshotsBtn">Snapshots</button>
-                        <button class="small-btn" id="showHiddenBtn">Hidden</button>
-                        <button class="small-btn" id="saveChangesBtn">Save</button>
+                    <div class="list-header-title">
+                        <span>[CONVERSATIONS]</span>
+                        <span class="list-count" id="listCount">(0 shown)</span>
                     </div>
                 </div>
                 <div class="conversation-items" id="conversationList">
@@ -1127,6 +1138,8 @@ class ViewerGenerator:
                 displayConversationStatistics();
                 displayConversationList();
                 updateFilterButtons();
+                updateConversationCounts();
+                updateConversationCounts();
             } catch (error) {
                 console.error('Failed to load manifest:', error);
                 document.getElementById('conversationList').innerHTML = '<div style="color: #ff0000;">Failed to load manifest.json</div>';
@@ -1267,7 +1280,6 @@ class ViewerGenerator:
 
                 // Add data attributes for filtering
                 item.setAttribute('data-type', conversationType);
-                item.setAttribute('data-display-default', visibleTypes[conversationType] ? 'true' : 'false');
 
                 if (conv.conversation_type === 'snapshot') {
                     item.className += ' snapshot';
@@ -1929,26 +1941,96 @@ ${escapeHtml(entry.summary || 'No summary available')}
             displayConversationList();
             displayConversationStatistics();
             updateFilterButtons();
+            updateConversationCounts();
         }
 
-        function showAllTypes() {
-            Object.keys(visibleTypes).forEach(type => {
-                visibleTypes[type] = true;
-            });
+        // Master toggle functionality
+        function toggleAllVisibility() {
+            const allVisible = Object.values(visibleTypes).every(v => v);
+
+            if (allVisible) {
+                // Hide all except original
+                Object.keys(visibleTypes).forEach(type => {
+                    visibleTypes[type] = type === 'original';
+                });
+            } else {
+                // Show all
+                Object.keys(visibleTypes).forEach(type => {
+                    visibleTypes[type] = true;
+                });
+            }
+
             displayConversationList();
             displayConversationStatistics();
             updateFilterButtons();
+            updateConversationCounts();
         }
 
-        function hideAllTypes() {
-            Object.keys(visibleTypes).forEach(type => {
-                visibleTypes[type] = false;
+        // Update conversation counts in button labels
+        function updateConversationCounts() {
+            if (!manifest || !manifest.conversations) return;
+
+            const counts = {
+                'sdk_generated': 0,
+                'multi_agent_workflow': 0,
+                'snapshot': 0,
+                'completion_marker': 0
+            };
+
+            manifest.conversations.forEach(conv => {
+                const type = conv.conversation_type || 'original';
+                if (counts.hasOwnProperty(type)) {
+                    counts[type]++;
+                }
             });
-            // Keep 'original' visible to avoid empty list
-            visibleTypes['original'] = true;
-            displayConversationList();
-            displayConversationStatistics();
-            updateFilterButtons();
+
+            // Update button labels with counts
+            const btnSDK = document.getElementById('btnSDK');
+            const btnSubagents = document.getElementById('btnSubagents');
+            const btnSnapshots = document.getElementById('btnSnapshots');
+            const btnCompletions = document.getElementById('btnCompletions');
+
+            if (btnSDK) {
+                const verb = visibleTypes['sdk_generated'] ? 'Hide' : 'Show';
+                btnSDK.innerHTML = `${verb} SDK <span class="count">(${counts['sdk_generated']})</span>`;
+            }
+            if (btnSubagents) {
+                const verb = visibleTypes['multi_agent_workflow'] ? 'Hide' : 'Show';
+                btnSubagents.innerHTML = `${verb} Subagents <span class="count">(${counts['multi_agent_workflow']})</span>`;
+            }
+            if (btnSnapshots) {
+                const verb = visibleTypes['snapshot'] ? 'Hide' : 'Show';
+                btnSnapshots.innerHTML = `${verb} Snapshots <span class="count">(${counts['snapshot']})</span>`;
+            }
+            if (btnCompletions) {
+                const verb = visibleTypes['completion_marker'] ? 'Hide' : 'Show';
+                btnCompletions.innerHTML = `${verb} Completions <span class="count">(${counts['completion_marker']})</span>`;
+            }
+
+            // Update list count
+            const visibleCount = manifest.conversations.filter(conv => {
+                const type = conv.conversation_type || 'original';
+                return visibleTypes[type] && !hiddenConversations.has(conv.session_id);
+            }).length;
+
+            const listCount = document.getElementById('listCount');
+            if (listCount) {
+                listCount.textContent = `(${visibleCount} shown)`;
+            }
+
+            // Update master toggle button
+            const masterBtn = document.getElementById('btnMasterToggle');
+            if (masterBtn) {
+                const allVisible = Object.values(visibleTypes).every(v => v);
+                masterBtn.textContent = allVisible ? 'Hide All' : 'Show All';
+                masterBtn.classList.toggle('active', allVisible);
+            }
+        }
+
+        // Export archive functionality
+        function exportArchive() {
+            // TODO: Implement full archive export
+            alert('Export archive functionality coming soon!');
         }
 
         function updateFilterButtons() {
@@ -1966,38 +2048,22 @@ ${escapeHtml(entry.summary || 'No summary available')}
                 if (btn) {
                     if (visibleTypes[type]) {
                         btn.classList.add('active');
-                        if (btnId === 'btnSDK') btn.textContent = 'Hide SDK';
-                        else if (btnId === 'btnSnapshots') btn.textContent = 'Hide Snapshots';
-                        else if (btnId === 'btnCompletions') btn.textContent = 'Hide Completions';
                     } else {
                         btn.classList.remove('active');
-                        if (btnId === 'btnSDK') btn.textContent = 'Show SDK';
-                        else if (btnId === 'btnSnapshots') btn.textContent = 'Show Snapshots';
-                        else if (btnId === 'btnCompletions') btn.textContent = 'Show Completions';
                     }
                 }
             });
 
-            // Update Show All / Hide All button states
-            const allVisible = Object.values(visibleTypes).every(v => v);
-            const showAllBtn = document.getElementById('btnShowAll');
-            if (showAllBtn) {
-                if (allVisible) {
-                    showAllBtn.classList.add('active');
-                } else {
-                    showAllBtn.classList.remove('active');
-                }
-            }
+            // Always update counts when updating buttons
+            updateConversationCounts();
         }
 
         function updateSaveButton() {
             const btn = document.getElementById('saveChangesBtn');
             if (hasUnsavedChanges) {
-                btn.classList.add('active');
-                btn.textContent = 'SAVE*';
+                btn.textContent = 'Save Changes*';
             } else {
-                btn.classList.remove('active');
-                btn.textContent = 'Save';
+                btn.textContent = 'Save Changes';
             }
         }
 
@@ -2250,10 +2316,7 @@ ${escapeHtml(entry.summary || 'No summary available')}
             URL.revokeObjectURL(url);
         }
 
-        // Event listeners
-        document.getElementById('showSnapshotsBtn').addEventListener('click', toggleShowSnapshots);
-        document.getElementById('showHiddenBtn').addEventListener('click', toggleShowHidden);
-        document.getElementById('saveChangesBtn').addEventListener('click', saveChanges);
+        // Event listeners - most are now inline in HTML
         document.getElementById('exportBtn').addEventListener('click', () => {
             const activeItem = document.querySelector('.conversation-item.active');
             if (activeItem && currentConversation) {

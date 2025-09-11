@@ -15,7 +15,7 @@ from .discovery import ConversationFile
 logger = logging.getLogger(__name__)
 
 # Cache version - increment when analysis logic changes
-CACHE_VERSION = "2.1.0"
+CACHE_VERSION = "2.2.0"  # Incremented to invalidate cache after continuation detection fix
 
 
 @dataclass

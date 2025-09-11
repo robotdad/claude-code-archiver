@@ -212,6 +212,12 @@ class Archiver:
             for _parent_id, child_ids in chains.items():
                 continuation_ids.update(child_ids)
 
+            # ALSO mark conversations with high continuation confidence as continuations
+            # This catches explicit continuation content that lacks structural relationships
+            for conv in conversations:
+                if hasattr(conv, "continuation_confidence") and conv.continuation_confidence >= 0.8:
+                    continuation_ids.add(conv.session_id)
+
             # Run snapshot detection to identify which files are snapshots
             self.discovery.detect_and_filter_snapshots(conversations)
             snapshot_ids = {c.session_id for c in conversations if c.is_snapshot}

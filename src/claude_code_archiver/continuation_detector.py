@@ -214,13 +214,16 @@ def _detect_explicit_continuation_content(file_path: Path) -> tuple[bool, float]
 
     try:
         with open(file_path, encoding="utf-8") as f:
-            # Check first 10 lines for explicit continuation statements
+            # Search through all summary lines until we hit actual conversation content
+            found_conversation_start = False
             for i, line in enumerate(f):
-                if i >= 10:  # Limit search to first 10 lines
-                    break
-
                 try:
                     data = json.loads(line)
+
+                    # Stop searching once we've found a user/assistant message
+                    # AND already checked it for continuation patterns
+                    if found_conversation_start and data.get("type") in ["user", "assistant"]:
+                        break
 
                     # Check conversation title
                     if title := data.get("name"):
@@ -231,6 +234,7 @@ def _detect_explicit_continuation_content(file_path: Path) -> tuple[bool, float]
 
                     # Check message content (for user or assistant messages)
                     if data.get("type") in ["user", "assistant"]:
+                        found_conversation_start = True
                         message_content = data.get("message", {})
                         content: Any = message_content.get("content", "")
 
