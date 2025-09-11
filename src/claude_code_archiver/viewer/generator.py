@@ -80,83 +80,126 @@ class ViewerGenerator:
             gap: 20px;
         }
 
-        /* Unified Header */
+        /* Unified Header - COMPACT VERSION */
         .unified-header {
             border: 1px solid var(--accent-green-muted);
-            padding: 20px;
-            margin-bottom: 20px;
+            padding: 8px 12px;  /* Reduced from 20px for compact header */
+            margin-bottom: 12px;
             background: var(--bg-secondary);
-            border-radius: 12px;
+            border-radius: 8px;
             font-family: system-ui, -apple-system, sans-serif;
         }
 
+        /* Top menu bar - compact styling */
+        .top-menu-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;  /* Small margin between menu and title */
+        }
+
+        .menu-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            color: var(--text-secondary);
+            padding: 4px 12px;  /* Compact padding */
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 11px;  /* Small font */
+            border-radius: 4px;
+            transition: all 0.2s ease;
+            font-weight: 500;
+        }
+
+        .menu-btn:hover {
+            background: var(--hover-bg);
+            color: var(--text-primary);
+            border-color: var(--accent-green-muted);
+        }
+
+        .menu-btn.primary {
+            background: var(--accent-green);
+            color: var(--bg-primary);
+            border-color: var(--accent-green);
+        }
+
+        .menu-btn.primary:hover {
+            background: var(--accent-green-muted);
+            border-color: var(--accent-green-muted);
+        }
+
         .header-main {
-            margin-bottom: 16px;
+            margin-bottom: 8px;  /* Reduced spacing */
         }
 
         .project-title {
-            font-size: 24px;
-            font-weight: 700;
+            font-size: 14px;  /* Smaller title for compact header */
+            font-weight: 600;
             color: var(--accent-orange);
-            margin: 0 0 6px 0;
-            letter-spacing: -0.5px;
+            margin: 0 0 4px 0;
+            letter-spacing: -0.3px;
         }
 
         .project-path {
             color: var(--text-secondary);
-            font-size: 14px;
+            font-size: 11px;  /* Smaller path text */
             font-family: 'SF Mono', 'Monaco', monospace;
+            opacity: 0.8;
         }
 
         .statistics-inline {
             display: flex;
-            flex-direction: column;
-            gap: 16px;
+            flex-direction: row;  /* Horizontal for compactness */
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
         }
 
         .stat-group {
             display: flex;
-            gap: 24px;
+            gap: 8px;  /* Much smaller gap */
             flex-wrap: wrap;
+            align-items: center;
         }
 
         .stat-item {
-            display: flex;
-            flex-direction: column;
+            display: inline-flex;  /* Inline for compactness */
             align-items: center;
-            padding: 8px 12px;
+            gap: 4px;
+            padding: 2px 8px;  /* Much smaller padding */
             background: var(--bg-tertiary);
-            border-radius: 8px;
-            min-width: 80px;
+            border-radius: 4px;
+            min-width: auto;  /* Remove minimum width */
+            font-size: 11px;
         }
 
         .stat-value {
-            font-size: 18px;
-            font-weight: 700;
+            font-size: 12px;  /* Much smaller */
+            font-weight: 600;
             color: var(--accent-green);
-            margin-bottom: 2px;
+            margin-bottom: 0;
         }
 
         .stat-label {
-            font-size: 11px;
+            font-size: 10px;
             color: var(--text-muted);
             text-transform: uppercase;
-            font-weight: 600;
-            letter-spacing: 0.5px;
+            font-weight: 500;
+            letter-spacing: 0.3px;
         }
 
         .type-breakdown {
             color: var(--accent-green);
-            font-size: 13px;
-            line-height: 1.6;
-            margin: 12px 0 0 0;
-            padding: 12px;
+            font-size: 11px;  /* Smaller font */
+            line-height: 1.2;  /* Tighter line height */
+            margin: 4px 0 0 0;  /* Much less margin */
+            padding: 4px 8px;  /* Smaller padding */
             background: var(--bg-tertiary);
-            border-radius: 8px;
+            border-radius: 4px;
         }
 
         .type-item {
-            margin: 3px 0;
+            display: inline;  /* Inline display */
+            margin: 0 8px 0 0;  /* Horizontal margin only */
             font-family: system-ui, -apple-system, sans-serif;
         }
 
@@ -1039,6 +1082,9 @@ class ViewerGenerator:
                             <button class="btn" id="detailedModeBtn">DETAILED MODE</button>
                         </div>
                         <div class="control-group">
+                            <button class="btn active" id="thinkingToggleBtn">HIDE THINKING</button>
+                        </div>
+                        <div class="control-group">
                             <button class="btn" id="exportBtn">EXPORT</button>
                         </div>
                     </div>
@@ -1055,6 +1101,7 @@ class ViewerGenerator:
         let manifest = null;
         let currentConversation = null;
         let viewMode = 'focused';
+        let thinkingVisible = true;  // Show thinking blocks by default
         let showSnapshots = false;  // Toggle for showing snapshot files
         let showHidden = false;  // Toggle for showing hidden conversations
         let hiddenConversations = new Set();  // Track hidden conversations
@@ -1296,8 +1343,8 @@ class ViewerGenerator:
 
                 // Determine the marker based on conversation type
                 let marker = '';
-                if (conv.conversation_type === 'post_compaction') {
-                    // Only mark true continuations
+                if (conv.conversation_type === 'true_continuation' || conv.conversation_type === 'post_compaction') {
+                    // Mark true continuations (both new and legacy type names)
                     marker = '<span class="continuation-marker">[CONTINUATION]</span> ';
                 } else if (conv.conversation_type === 'snapshot') {
                     marker = '<span class="snapshot-marker">[SNAPSHOT]</span> ';
@@ -1639,12 +1686,14 @@ ${escapeHtml(entry.summary || 'No summary available')}
                     if (thinkingBlock) {
                         const thinkingDiv = document.createElement('div');
                         thinkingDiv.className = 'message thinking';
-                        // Always show thinking by default
+                        // Respect thinkingVisible state
+                        const displayStyle = thinkingVisible ? 'block' : 'none';
+                        const indicatorStyle = thinkingVisible ? 'none' : 'inline-block';
                         thinkingDiv.innerHTML = `
                             <span class="message-prefix"></span>
                             <span class="message-content">
-                                <span class="thinking-indicator" onclick="toggleThinking(this)">💭 Thinking</span>
-                                <div class="thinking-content">${escapeHtml(thinkingBlock.thinking || '')}</div>
+                                <span class="thinking-indicator" style="display: ${indicatorStyle}" onclick="toggleThinking(this)">💭 Thinking</span>
+                                <div class="thinking-content" style="display: ${displayStyle}">${escapeHtml(thinkingBlock.thinking || '')}</div>
                             </span>
                         `;
                         container.appendChild(thinkingDiv);
@@ -1973,6 +2022,26 @@ ${escapeHtml(entry.summary || 'No summary available')}
             if (currentConversation) {
                 displayMessages();
             }
+        });
+
+        // Thinking toggle functionality
+        document.getElementById('thinkingToggleBtn').addEventListener('click', () => {
+            thinkingVisible = !thinkingVisible;
+            const btn = document.getElementById('thinkingToggleBtn');
+            btn.textContent = thinkingVisible ? 'HIDE THINKING' : 'SHOW THINKING';
+            btn.classList.toggle('active', thinkingVisible);
+
+            // Toggle all thinking blocks visibility
+            const thinkingBlocks = document.querySelectorAll('.thinking-content');
+            thinkingBlocks.forEach(block => {
+                block.style.display = thinkingVisible ? 'block' : 'none';
+            });
+
+            // Update thinking indicators
+            const indicators = document.querySelectorAll('.thinking-indicator');
+            indicators.forEach(indicator => {
+                indicator.style.display = thinkingVisible ? 'none' : 'inline-block';
+            });
         });
 
         // Hide/Show functionality
