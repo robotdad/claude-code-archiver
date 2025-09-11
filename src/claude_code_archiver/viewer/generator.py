@@ -1632,19 +1632,19 @@ ${escapeHtml(entry.summary || 'No summary available')}
                 `;
                 container.appendChild(messageDiv);
             } else if (entry.message) {
-                // Handle thinking blocks separately
+                // Handle thinking blocks - SHOWN BY DEFAULT, LEFT ALIGNED
                 if (isThinking && entry.message.content) {
                     // Extract thinking content
                     const thinkingBlock = entry.message.content.find(b => b.type === 'thinking');
                     if (thinkingBlock) {
                         const thinkingDiv = document.createElement('div');
                         thinkingDiv.className = 'message thinking';
-                        const isCollapsed = viewMode === 'focused';
+                        // Always show thinking by default
                         thinkingDiv.innerHTML = `
                             <span class="message-prefix"></span>
                             <span class="message-content">
-                                <span class="thinking-indicator" onclick="toggleThinking(this)">Thinking...</span>
-                                <div class="thinking-content${!isCollapsed ? ' expanded' : ''}">${escapeHtml(thinkingBlock.thinking || '')}</div>
+                                <span class="thinking-indicator" onclick="toggleThinking(this)">💭 Thinking</span>
+                                <div class="thinking-content">${escapeHtml(thinkingBlock.thinking || '')}</div>
                             </span>
                         `;
                         container.appendChild(thinkingDiv);
@@ -1676,15 +1676,95 @@ ${escapeHtml(entry.summary || 'No summary available')}
                         // Extract only text blocks
                         const textBlocks = entry.message.content
                             .filter(b => b.type === 'text')
-                            .map(b => b.text || '')
+                            .map(b => {
+                                const text = b.text || '';
+
+                                // Enhanced user command rendering
+                                // Pattern 1: Extract command name from standard tags
+                                const commandNameMatch = text.match(/<command-name>([^<]+)<\\/command-name>/);
+                                if (commandNameMatch) {
+                                    const commandName = commandNameMatch[1];
+                                    // Extract any parameters or details after the command tags
+                                    const cleanedText = text
+                                        .replace(/<command[^>]*>.*?<\\/command>/gs, '')
+                                        .replace(/<command-name>.*?<\\/command-name>/gs, '')
+                                        .trim();
+
+                                    if (cleanedText) {
+                                        return `⌘ ${commandName}: ${cleanedText}`;
+                                    } else {
+                                        return `⌘ ${commandName}`;
+                                    }
+                                }
+
+                                // Pattern 2: Handle standalone command tags
+                                const commandMatch = text.match(/<command>([^<]+)<\\/command>/);
+                                if (commandMatch) {
+                                    return `⌘ ${commandMatch[1]}`;
+                                }
+
+                                // Pattern 3: Clean any remaining command-related XML tags
+                                const cleanedText = text
+                                    .replace(/<\\/?command[^>]*>/g, '')
+                                    .replace(/<\\/?command-name[^>]*>/g, '')
+                                    .trim();
+
+                                return cleanedText;
+                            })
+                            .filter(text => text) // Remove empty strings
                             .join('\\n\\n');
                         mainContent = textBlocks;
                     }
 
-                    // Add agent label if it's a sidechain message
+                    // Add agent name for sidechain messages
                     let agentLabel = '';
                     if (isAgent) {
-                        agentLabel = '<span class="agent-label">[Agent]</span> ';
+                        // Extract subagent name from entry metadata or content
+                        let agentName = 'Agent';
+
+                        // Enhanced subagent name detection with flow-based insights
+                        let detectionMethod = 'structural';
+                        let confidence = 0.5;
+
+                        // Priority 1: Enhanced metadata from flow analysis
+                        if (entry.metadata && entry.metadata.subagent_info) {
+                            const subagentInfo = entry.metadata.subagent_info;
+                            if (subagentInfo.active_subagent && subagentInfo.active_subagent !== 'detected') {
+                                agentName = subagentInfo.active_subagent;
+                            }
+                            detectionMethod = subagentInfo.primary_detection_method || 'flow_pattern';
+                            confidence = entry.metadata.flow_confidence || 0.5;
+                        }
+                        // Priority 2: Agent types from enhanced detection
+                        else if (entry.metadata && entry.metadata.agent_types && entry.metadata.agent_types.length > 0) {
+                            agentName = entry.metadata.agent_types[0]; // Use first/primary agent type
+                        }
+                        // Priority 3: Traditional subagent type detection
+                        else if (entry.subagent_type) {
+                            agentName = entry.subagent_type;
+                        } else if (entry.metadata && entry.metadata.subagent_type) {
+                            agentName = entry.metadata.subagent_type;
+                        }
+                        // Priority 4: Task tool call inspection
+                        else if (entry.tool_calls) {
+                            const taskCall = entry.tool_calls.find(tc => tc.function && tc.function.name === 'Task');
+                            if (taskCall && taskCall.function.arguments) {
+                                try {
+                                    const args = JSON.parse(taskCall.function.arguments);
+                                    if (args.subagent_type) {
+                                        agentName = args.subagent_type;
+                                    }
+                                } catch (e) {
+                                    // Ignore parse errors
+                                }
+                            }
+                        }
+
+                        // Enhance agent name display with confidence and method
+                        const confidenceIndicator = confidence > 0.8 ? '🔮' : confidence > 0.5 ? '✨' : '💫';
+                        const displayName = agentName.replace(/-/g, ' ').replace(/\\b\\w/g, l => l.toUpperCase());
+
+                        agentLabel = `<span class="agent-name" title="Detection: ${detectionMethod}, Confidence: ${confidence}">[${confidenceIndicator} ${displayName}]</span> `;
                     }
 
                     // Check if content should be rendered as markdown

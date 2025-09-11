@@ -240,9 +240,17 @@ class Archiver:
                     # Check if it's auto-linked (brief summary) vs true continuation
                     is_auto_linked = self._is_auto_linked_conversation(conv.path)
 
+                # Check if this is a command-only conversation
+                from .command_detector import is_command_only
+
+                is_command_only_conv = is_command_only(conv)
+
                 # Determine conversation type for viewer (EXPANDED CLASSIFICATION SYSTEM)
                 # PRIORITY ORDER (highest to lowest):
-                if conv.is_sdk_generated:
+                if is_command_only_conv:
+                    manifest_conv["conversation_type"] = "command_only"
+                    manifest_conv["display_by_default"] = False
+                elif conv.is_sdk_generated:
                     manifest_conv["conversation_type"] = "sdk_generated"
                     manifest_conv["display_by_default"] = False
                 elif session_id in snapshot_ids:
@@ -736,6 +744,7 @@ class Archiver:
                 "original": type_counts.get("original", 0),
                 "true_continuation": type_counts.get("true_continuation", 0),
                 "sdk_generated": type_counts.get("sdk_generated", 0),
+                "command_only": type_counts.get("command_only", 0),
                 "multi_agent_workflow": type_counts.get("multi_agent_workflow", 0),
                 "subagent_sidechain": type_counts.get("subagent_sidechain", 0),
                 "context_history": type_counts.get("context_history", 0),

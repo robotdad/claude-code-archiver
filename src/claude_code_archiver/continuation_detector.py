@@ -96,8 +96,8 @@ def _analyze_summary_context(file_path: Path) -> tuple[bool, int, bool]:
         with open(file_path, encoding="utf-8") as f:
             lines = f.readlines()
 
-            # Look at first 15 lines for pattern analysis
-            analysis_lines = lines[: min(15, len(lines))]
+            # Look at first 30 lines for pattern analysis (some conversations have many summaries)
+            analysis_lines = lines[: min(30, len(lines))]
 
             for i, line in enumerate(analysis_lines):
                 try:
@@ -158,9 +158,9 @@ def _detect_session_transitions(file_path: Path) -> tuple[bool, set[str]]:
 
     try:
         with open(file_path, encoding="utf-8") as f:
-            # Scan first 15 lines for different sessionId values
+            # Scan first 30 lines for different sessionId values
             for i, line in enumerate(f):
-                if i >= 15:  # Limit search to first 15 lines
+                if i >= 30:  # Limit search to first 30 lines
                     break
 
                 try:
@@ -214,15 +214,17 @@ def _detect_explicit_continuation_content(file_path: Path) -> tuple[bool, float]
 
     try:
         with open(file_path, encoding="utf-8") as f:
-            # Search through all summary lines until we hit actual conversation content
-            found_conversation_start = False
-            for i, line in enumerate(f):
+            # Search through file, but focus on first few user/assistant messages
+            # Don't stop after just one message - check at least the first 3 user/assistant messages
+            messages_checked = 0
+            max_messages_to_check = 3
+
+            for _i, line in enumerate(f):
                 try:
                     data = json.loads(line)
 
-                    # Stop searching once we've found a user/assistant message
-                    # AND already checked it for continuation patterns
-                    if found_conversation_start and data.get("type") in ["user", "assistant"]:
+                    # Stop after checking enough actual messages (not summaries)
+                    if messages_checked >= max_messages_to_check:
                         break
 
                     # Check conversation title
@@ -234,7 +236,7 @@ def _detect_explicit_continuation_content(file_path: Path) -> tuple[bool, float]
 
                     # Check message content (for user or assistant messages)
                     if data.get("type") in ["user", "assistant"]:
-                        found_conversation_start = True
+                        messages_checked += 1
                         message_content = data.get("message", {})
                         content: Any = message_content.get("content", "")
 
@@ -258,9 +260,13 @@ def _detect_explicit_continuation_content(file_path: Path) -> tuple[bool, float]
                         # Check for explicit continuation phrases
                         for phrase in continuation_phrases:
                             if phrase in content_lower:
-                                # Higher confidence for user messages in first few lines
-                                if data.get("type") == "user" and i < 5:
+                                # Very high confidence for explicit continuation text
+                                # "This session is being continued" is unambiguous
+                                if "this session is being continued" in content_lower:
                                     return True, 0.95
+                                # Higher confidence for user messages with continuation text
+                                if data.get("type") == "user":
+                                    return True, 0.90
                                 return True, 0.85
 
                 except (json.JSONDecodeError, KeyError):
@@ -342,6 +348,13 @@ def determine_continuation_type(pattern: SummaryPattern) -> str | None:
     """
     if pattern.confidence_score < 0.5:
         return None
+
+    # High confidence from explicit continuation text overrides structural patterns
+    if pattern.confidence_score >= 0.85:
+        if pattern.has_session_transitions:
+            return "post_compaction"
+        # Even with many summaries, if we have explicit continuation text, it's a true continuation
+        return "true_continuation"
 
     if pattern.confidence_score >= 0.8:
         if pattern.has_session_transitions:
