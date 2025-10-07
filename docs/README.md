@@ -16,77 +16,45 @@ Claude Code stores conversation history in JSONL (JSON Lines) format. Understand
 ### Core Documentation Files
 
 #### 1. [claude-jsonl-schema.md](claude-jsonl-schema.md)
-**The JSONL Schema Reference**
-- Complete schema documentation for all message types
-- Field descriptions and data types
-- Tool schemas and parameters
-- File organization and naming conventions
-- Instructions for exploring your own Claude Code data
+**Schema Reference**
+- Complete message schema with all fields
+- System messages and compact boundaries
+- Tool schemas and content blocks
+- Exploration commands for your data
 
 #### 2. [claude-file-relationships.md](claude-file-relationships.md)
-**Understanding File Relationships**
-- Different conversation types (regular, continuation, sidechain, etc.)
-- UUID relationship system and how messages connect
-- File creation triggers and lifecycle
-- Cross-directory relationships (projects, todos, shell-snapshots)
-- Detection algorithms for different conversation patterns
+**Session Relationships**
+- DAG structure (Directed Acyclic Graphs)
+- Conversation types: regular, continuation, compacted, sidechain
+- UUID relationships: parentUuid, leafUuid, logicalParentUuid
+- Detection algorithms
 
-### Pattern Analysis
+#### 3. [compact-operations.md](compact-operations.md)
+**Compact Operations**
+- How compaction works (same-file context management)
+- Compact boundary messages and logicalParentUuid
+- Trigger conditions (~155k tokens or manual)
+- Multiple compacts in single session
 
-#### 3. [message-structure-complexity.md](message-structure-complexity.md)
-**Message Structure Complexity**
-- Distinguishing conversational vs technical messages
-- Tool orchestration and result handling
-- System-injected content (reminders, hooks)
-- Assistant thinking blocks (hidden reasoning)
-- Content block types and metadata
+#### 4. [message-types.md](message-types.md)
+**Message Classification**
+- Distinguishing human vs system messages
+- Tool orchestration patterns
+- Display strategies for different message types
 
-#### 4. [git-usage-patterns.md](git-usage-patterns.md)
-**Git Integration Patterns**
-- Common git commands and workflows
-- Commit message structure and conventions
-- Branch management patterns
-- Pull request creation with GitHub CLI
-- Correlation between conversation activities and git operations
+### Additional Documentation
 
 #### 5. [subagent-and-sidechain-patterns.md](subagent-and-sidechain-patterns.md)
-**Parallel Processing and Task Delegation**
-- Task tool and subagent system
-- Sidechain conversation structure
-- Usage patterns for complex workflows
-- Performance observations
-- Parallel conversation patterns
+**Subagents and Sidechains**
+- Task tool for parallel processing
+- Sidechain detection and behavior
+- Usage patterns
 
-#### 6. [worktree-sdk-patterns.md](worktree-sdk-patterns.md)
-**Automation and SDK Usage** *(Note: Patterns from specific implementation)*
-- Git worktree integration patterns
-- SDK-driven conversation characteristics
-- Automated retry and iteration patterns
-- Differences from manual usage
-- **Important**: Contains observations from a specific SDK implementation
-
-#### 7. [mcp-integration-patterns.md](mcp-integration-patterns.md)
-**Model Context Protocol Integration**
-- MCP server identification and naming conventions
-- Tool selection priority (MCP vs built-in)
-- Common MCP server types and capabilities
-- Integration patterns with external services
-- Security and performance considerations
-
-#### 8. [hook-patterns.md](hook-patterns.md)
-**Hook System and Event Handling**
-- Hook event types and triggers
+#### 6. [hook-patterns.md](hook-patterns.md)
+**Hook System**
+- Hook event types
 - Message modification patterns
-- Blocking and validation hooks
-- Integration with git, testing, and documentation
-- Performance and security implications
-
-#### 9. [consolidated-findings-update.md](consolidated-findings-update.md)
-**Key Discoveries and Insights**
-- Summary file dual purposes
-- File size ranges and variations
-- Sidechain usage patterns
-- Development workflow observations
+- Integration with tools
 
 ### Examples Directory
 

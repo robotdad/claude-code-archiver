@@ -1,8 +1,24 @@
-# Claude Code File Relationships and Conversation Types
+# Claude Code Session Relationships
 
 ## Overview
 
-Claude Code manages complex relationships between conversation files, supporting conversation continuations, parallel processing, and maintaining context across sessions. This document describes how files relate to each other and the different types of conversations that exist.
+Claude Code conversation sessions form **Directed Acyclic Graphs (DAGs)** where messages link via `parentUuid` relationships. Sessions can also link across files via continuations (`leafUuid`) and within files via compact operations (`logicalParentUuid`).
+
+## Message Graph Structure
+
+Within each session, messages form a DAG:
+- Each message has a `uuid` and optional `parentUuid`
+- Multiple children of one parent create **fork points**
+- "Redo from here" creates branches within same file
+- File position determines abandoned vs active branches
+
+```
+Root (parentUuid: null)
+  → Message A
+    → Message B1 (first branch - abandoned)
+    → Message B2 (redo - active)
+      → Message C
+```
 
 ## Conversation Types
 
@@ -44,6 +60,34 @@ Previous File: [...messages...] → Last Message (uuid: X)
 New File: Summary (leafUuid: X) → Continuation Messages...
 ```
 
+### 3. Compacted Conversations (NEW)
+
+**Characteristics:**
+- Stay in same JSONL file (no new file created)
+- Create new DAG root with `parentUuid: null`
+- Link segments via `logicalParentUuid`
+- Triggered at ~155k tokens or manual `/compact`
+- Can have multiple compacts in one file (up to 8+ observed)
+
+**Structure:**
+```
+Same File:
+  Pre-Compact Root → Messages → Last (uuid: X)
+  Compact Boundary (parentUuid: null, logicalParentUuid: X)
+  Post-Compact Messages → ...
+```
+
+**Detection:**
+```python
+def is_compact_boundary(msg):
+    return (
+        msg.get("type") == "system" and
+        msg.get("subtype") == "compact_boundary"
+    )
+```
+
+See [compact-operations.md](compact-operations.md) for details.
+
 **Identification:**
 - First line contains `"type": "summary"`
 - Summary includes brief description of previous conversation
@@ -55,7 +99,7 @@ New File: Summary (leafUuid: X) → Continuation Messages...
 3. New file created with summary as first entry
 4. Conversation continues with fresh context
 
-### 3. Sidechain Conversations
+### 4. Sidechain Conversations
 
 **Characteristics:**
 - Marked with `"isSidechain": true`
@@ -82,7 +126,7 @@ Sidechain 1: Task X     Sidechain 2: Task Y
 - Moderate complexity projects may have some sidechain usage
 - Complex projects can show significant sidechain usage (up to 50% or more of files)
 
-### 4. Compact Summary Conversations
+### 5. Compact Summary Conversations
 
 **Characteristics:**
 - Messages marked with `"isCompactSummary": true`
@@ -90,7 +134,7 @@ Sidechain 1: Task X     Sidechain 2: Task Y
 - Used for context preservation in continuations
 - Contains essential information from previous sessions
 
-### 5. Summary-Only Files
+### 6. Summary-Only Files
 
 **Characteristics:**
 - Files containing only a single summary message
@@ -141,6 +185,13 @@ Sidechain 1: Task X     Sidechain 2: Task Y
 - **Usage**: Links continuation to previous conversation
 - **Location**: Only in summary messages
 - **Purpose**: Identifies endpoint of previous conversation
+
+#### logicalParentUuid (NEW)
+- **Scope**: Compact operations
+- **Format**: UUID v4
+- **Usage**: Links compact segments within same file
+- **Location**: Compact boundary messages
+- **Purpose**: Maintains conversation flow across compacts
 
 ### Relationship Patterns
 

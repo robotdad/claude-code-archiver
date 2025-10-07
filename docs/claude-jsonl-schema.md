@@ -30,6 +30,9 @@ for f in ~/.claude/projects/*/*.jsonl; do
   head -1 "$f" 2>/dev/null | jq -e '.type == "summary"' >/dev/null 2>&1 && echo "Found"
 done | wc -l
 
+echo "Checking for compact operations..."
+grep -l '"subtype":"compact_boundary"' ~/.claude/projects/*/*.jsonl 2>/dev/null | wc -l
+
 # Examine a conversation structure (replace with your own file)
 file=$(find ~/.claude/projects -name "*.jsonl" 2>/dev/null | head -1)
 if [ -n "$file" ]; then
@@ -83,6 +86,8 @@ head -1 ~/.claude/projects/*/some-uuid.jsonl | jq '.'
 | `timestamp` | string (ISO 8601) | When the message was created | Yes |
 | `sessionId` | string (UUID) | Session identifier (matches filename) | Yes |
 | `parentUuid` | string (UUID) or null | Reference to parent message | Yes |
+| `logicalParentUuid` | string (UUID) or null | Logical parent for compact operations | No |
+| `subtype` | string or null | Message subtype (e.g., "compact_boundary") | No |
 | `isSidechain` | boolean | Whether this is a sidechain conversation | Yes |
 | `userType` | string | User type (typically "external") | Yes |
 | `cwd` | string | Current working directory | Yes |
@@ -91,7 +96,35 @@ head -1 ~/.claude/projects/*/some-uuid.jsonl | jq '.'
 
 ## Message Types
 
-### 1. Summary Message
+### 1. System Message
+
+System-generated messages including compact operations.
+
+```json
+{
+  "type": "system",
+  "subtype": "compact_boundary",
+  "parentUuid": null,
+  "logicalParentUuid": "86b9169b-fe6c-4196-9d48-c05558081be3",
+  "content": "Conversation compacted",
+  "compactMetadata": {
+    "trigger": "auto",
+    "preTokens": 155159
+  },
+  "timestamp": "2025-09-19T02:03:02.806Z",
+  "uuid": "eb965ed5-3b2a-48d9-8a45-488abab515e9",
+  "sessionId": "28474888-f812-4513-b341-712070fb65d2"
+}
+```
+
+**Compact Boundary Messages:**
+- Mark conversation compaction points
+- Create new DAG roots (`parentUuid: null`)
+- Link to previous segment via `logicalParentUuid`
+- Include metadata about trigger and token count
+- See [compact-operations.md](compact-operations.md) for details
+
+### 2. Summary Message
 
 Appears at the beginning of continuation conversations OR as completion markers.
 

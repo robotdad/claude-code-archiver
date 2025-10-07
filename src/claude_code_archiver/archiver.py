@@ -10,8 +10,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from .discovery import ConversationFile
 from .discovery import ProjectDiscovery
+from .models import SessionFile
 from .parser import ConversationParser
 from .sanitizer import SanitizationStats
 from .sanitizer import Sanitizer
@@ -21,29 +21,14 @@ from .viewer import ViewerGenerator
 class ArchiveManifest(BaseModel):
     """Manifest for the archive."""
 
-    version: str = "2.1"  # Bumped version for new tracking
+    version: str = "3.0"  # Bumped for DAG-native redesign
     created_at: str
     project_path: str
     conversation_count: int
     total_messages: int
     date_range: dict[str, str | None]
     conversations: list[dict[str, Any]]
-    continuation_chains: dict[str, list[str]]
     sanitization_stats: dict[str, Any] | None = None
-    todos: dict[str, Any] | None = None
-
-    # New enhancement fields
-    project_aliases: list[str] | None = None  # List of project path aliases used
-    hidden_conversations: list[str] | None = None  # List of session IDs to hide
-    user_metadata: dict[str, Any] | None = None  # User customizations and preferences
-    last_refresh: str | None = None  # Timestamp of last refresh operation
-
-    # Sidechain and message tracking
-    sidechain_relationships: dict[str, list[str]] | None = None  # Session ID -> list of sidechain session IDs
-    subagent_relationships: dict[str, Any] | None = None  # Subagent parent-child relationships
-    cross_session_chains: dict[str, list[str]] | None = None  # Cross-session threading chains
-    aggregate_statistics: dict[str, Any] | None = None  # Aggregate stats across all conversations
-    conversation_statistics: dict[str, Any] | None = None  # Statistics by conversation type
 
 
 class Archiver:
@@ -66,9 +51,6 @@ class Archiver:
         project_path: Path,
         sanitize: bool = True,
         output_name: str | None = None,
-        include_snapshots: bool = False,
-        include_todos: bool = True,
-        project_aliases: list[str] | None = None,
     ) -> Path:
         """Create an archive for a project's conversations.
 
@@ -76,9 +58,6 @@ class Archiver:
             project_path: Path to the project
             sanitize: Whether to sanitize sensitive data
             output_name: Optional custom archive name
-            include_snapshots: Whether to include intermediate conversation snapshots
-            include_todos: Whether to include todo files from ~/.claude/todos/
-            project_aliases: Additional project names/paths to include conversations from
 
         Returns:
             Path to the created archive
@@ -86,39 +65,10 @@ class Archiver:
         Raises:
             ValueError: If project has no conversations
         """
-        # Discover all conversations from main project and aliases
-        conversations = self.discovery.discover_project_conversations(
-            project_path,
-            exclude_snapshots=False,  # Always get all files, tag them in manifest
-        )
+        # Discover all sessions
+        sessions: list[SessionFile] = self.discovery.discover_project_conversations(project_path)
 
-        # Add conversations from project aliases if provided
-        all_project_paths = [str(project_path)]
-        if project_aliases:
-            for alias in project_aliases:
-                # Handle wildcard patterns
-                if "*" in alias or "?" in alias:
-                    # Use glob to expand wildcards
-                    alias_paths = list(Path(alias).parent.glob(Path(alias).name))
-                    for alias_path in alias_paths:
-                        if alias_path.is_dir():
-                            alias_conversations = self.discovery.discover_project_conversations(
-                                alias_path,
-                                exclude_snapshots=False,
-                            )
-                            conversations.extend(alias_conversations)
-                            all_project_paths.append(str(alias_path))
-                else:
-                    # Handle as literal path
-                    alias_path = Path(alias)
-                    alias_conversations = self.discovery.discover_project_conversations(
-                        alias_path,
-                        exclude_snapshots=False,
-                    )
-                    conversations.extend(alias_conversations)
-                    all_project_paths.append(str(alias_path))
-
-        if not conversations:
+        if not sessions:
             raise ValueError(f"No conversations found for project: {project_path}")
 
         # Create temporary directory for archive contents
@@ -133,194 +83,70 @@ class Archiver:
             conversations_dir = temp_dir / "conversations"
             conversations_dir.mkdir(parents=True, exist_ok=True)
 
-            # Create todos directory if including todos
-            todos_metadata = {}
-            if include_todos:
-                todos_dir = temp_dir / "todos"
-                todos_dir.mkdir(parents=True, exist_ok=True)
-                todos_metadata = self._collect_todo_files(conversations, todos_dir)
-
             # Process conversations
             manifest_conversations: list[dict[str, Any]] = []
             total_messages = 0
             sanitization_stats = SanitizationStats()
 
-            for conv in conversations:
+            for session_file in sessions:
                 # Copy and optionally sanitize conversation file
-                # Use the original filename to avoid confusion with continuations
-                # that have different internal session IDs
-                output_filename = conv.path.name
+                output_filename = session_file.path.name
                 output_file = conversations_dir / output_filename
 
                 if sanitize:
-                    stats = self.sanitizer.sanitize_file(conv.path, output_file)
+                    stats = self.sanitizer.sanitize_file(session_file.path, output_file)
                     sanitization_stats.total_redactions += stats.total_redactions
                     for key, value in stats.redactions_by_type.items():
                         sanitization_stats.redactions_by_type[key] = (
                             sanitization_stats.redactions_by_type.get(key, 0) + value
                         )
                 else:
-                    shutil.copy2(conv.path, output_file)
+                    shutil.copy2(session_file.path, output_file)
 
                 # Parse for statistics
-                entries = self.parser.parse_file(output_file)
-                stats = self.parser.extract_statistics(entries)
-                total_messages += stats["total_messages"]
+                dag = self.parser.parse_file(output_file)
+                message_count = dag.message_count
+                total_messages += message_count
 
                 # Extract conversation title from first meaningful user message
                 conversation_title = self._extract_conversation_title(output_file)
 
-                # Add to manifest with proper conversation type tagging
+                # Add to manifest using SessionFile fields
                 manifest_conv = {
-                    "session_id": conv.session_id,
+                    "session_id": session_file.path.stem,  # Use filename as session ID
                     "file": f"conversations/{output_filename}",
                     "title": conversation_title,
-                    "message_count": conv.message_count,
-                    "first_timestamp": conv.first_timestamp,
-                    "last_timestamp": conv.last_timestamp,
-                    "starts_with_summary": conv.starts_with_summary,
-                    "is_post_compaction": conv.parent_session_id is not None,  # Has parent from compaction
-                    "parent_session_id": conv.parent_session_id,  # For post-compaction continuations
-                    "has_sidechains": conv.has_sidechains,
-                    "sidechain_count": conv.sidechain_count,
-                    "statistics": stats,
-                    # Enhanced detector metadata fields
-                    "continuation_confidence": conv.continuation_confidence,
-                    "continuation_type": conv.continuation_type,
-                    "sdk_pattern_score": conv.sdk_pattern_score,
-                    "is_sdk_generated": conv.is_sdk_generated,
-                    "is_subagent_sidechain": conv.is_subagent_sidechain,
+                    "message_count": session_file.message_count,
+                    "path_count": session_file.path_count,
+                    "has_branches": session_file.has_branches,
+                    "size_bytes": session_file.size_bytes,
                 }
-
-                # We'll mark is_continuation after building chains
-
-                # Add snapshot metadata if present
-                if conv.is_snapshot:
-                    manifest_conv["is_snapshot"] = conv.is_snapshot
-                    manifest_conv["snapshot_group"] = conv.snapshot_group
-                    manifest_conv["snapshot_type"] = conv.snapshot_type
 
                 manifest_conversations.append(manifest_conv)
 
-            # Find continuation chains using the enhanced detector
-            from .continuation_detector import find_continuation_chains
-
-            chains = find_continuation_chains(conversations)
-
-            # Mark conversations that are continuations (appear in chains as values)
-            continuation_ids: set[str] = set()
-            for _parent_id, child_ids in chains.items():
-                continuation_ids.update(child_ids)
-
-            # ALSO mark conversations with high continuation confidence as continuations
-            # This catches explicit continuation content that lacks structural relationships
-            for conv in conversations:
-                if hasattr(conv, "continuation_confidence") and conv.continuation_confidence >= 0.8:
-                    continuation_ids.add(conv.session_id)
-
-            # Run snapshot detection to identify which files are snapshots
-            self.discovery.detect_and_filter_snapshots(conversations)
-            snapshot_ids = {c.session_id for c in conversations if c.is_snapshot}
-
-            # Update manifest conversations with proper tagging
-            for idx, manifest_conv in enumerate(manifest_conversations):
-                session_id = manifest_conv["session_id"]
-                manifest_conv["is_continuation"] = session_id in continuation_ids
-                manifest_conv["is_snapshot"] = session_id in snapshot_ids
-
-                # Get the corresponding conversation object
-                conv = conversations[idx]
-
-                # Check for internal compaction (new pattern discovered in e22b2cf8) - not used in current classification
-                # has_internal_compaction = self._has_internal_compaction(conv.path)
-
-                # Check if this is auto-linked vs true continuation
-                is_auto_linked = False
-                if manifest_conv["is_continuation"] and not manifest_conv.get("is_post_compaction"):
-                    # Check if it's auto-linked (brief summary) vs true continuation
-                    is_auto_linked = self._is_auto_linked_conversation(conv.path)
-
-                # Check if this is a command-only conversation
-                from .command_detector import is_command_only
-
-                is_command_only_conv = is_command_only(conv)
-
-                # Determine conversation type for viewer (EXPANDED CLASSIFICATION SYSTEM)
-                # PRIORITY ORDER (highest to lowest):
-                if is_command_only_conv:
-                    manifest_conv["conversation_type"] = "command_only"
-                    manifest_conv["display_by_default"] = False
-                elif conv.is_sdk_generated:
-                    manifest_conv["conversation_type"] = "sdk_generated"
-                    manifest_conv["display_by_default"] = False
-                elif session_id in snapshot_ids:
-                    manifest_conv["conversation_type"] = "snapshot"
-                    manifest_conv["display_by_default"] = False
-                elif manifest_conv.get("is_post_compaction"):
-                    manifest_conv["conversation_type"] = "post_compaction"
-                    manifest_conv["display_by_default"] = True
-                elif conv.continuation_confidence > 0.8:
-                    manifest_conv["conversation_type"] = "true_continuation"
-                    manifest_conv["display_by_default"] = True
-                elif conv.continuation_type == "context_history":
-                    manifest_conv["conversation_type"] = "context_history"
-                    manifest_conv["display_by_default"] = False
-                elif conv.has_sidechains and conv.sidechain_count >= 3:
-                    manifest_conv["conversation_type"] = "multi_agent_workflow"
-                    manifest_conv["display_by_default"] = True
-                elif getattr(conv, "is_subagent_sidechain", False):
-                    manifest_conv["conversation_type"] = "subagent_sidechain"
-                    manifest_conv["display_by_default"] = False  # Or configurable later
-                elif is_auto_linked and not conv.starts_with_summary:
-                    manifest_conv["conversation_type"] = "auto_linked"
-                    manifest_conv["display_by_default"] = True
-                elif conv.is_completion_marker:
-                    manifest_conv["conversation_type"] = "completion_marker"
-                    manifest_conv["display_by_default"] = False
-                else:
-                    manifest_conv["conversation_type"] = "original"
-                    manifest_conv["display_by_default"] = True
-
             # Calculate date range
-            timestamps = [c.first_timestamp for c in conversations if c.first_timestamp]
+            timestamps: list[str] = []
+            for session in sessions:
+                # Parse timestamps from the DAG to get actual date range
+                dag = self.parser.parse_file(session.path)
+                for node in dag.nodes.values():
+                    if node.timestamp:
+                        timestamps.append(node.timestamp)
+
             date_range = {
                 "earliest": min(timestamps) if timestamps else None,
-                "latest": max([c.last_timestamp for c in conversations if c.last_timestamp], default=None),
+                "latest": max(timestamps) if timestamps else None,
             }
-
-            # Build sidechain relationships map
-            sidechain_relationships = self._build_sidechain_relationships(conversations)
-
-            # Build subagent cross-session relationships
-            subagent_relationships = self._build_subagent_relationships(conversations)
-            cross_session_chains = self._build_cross_session_chains(conversations)
-
-            # Calculate aggregate statistics
-            aggregate_stats = self._calculate_aggregate_statistics(manifest_conversations)
-
-            # Calculate conversation statistics by type for viewer header
-            conversation_stats = self._calculate_conversation_statistics(manifest_conversations)
 
             # Create manifest
             manifest = ArchiveManifest(
                 created_at=datetime.now(UTC).isoformat(),
                 project_path=str(project_path),
-                conversation_count=len(conversations),
+                conversation_count=len(sessions),
                 total_messages=total_messages,
                 date_range=date_range,
                 conversations=manifest_conversations,
-                continuation_chains=chains,
                 sanitization_stats=sanitization_stats.model_dump() if sanitize else None,
-                todos=todos_metadata if include_todos else None,
-                project_aliases=all_project_paths if len(all_project_paths) > 1 else None,
-                hidden_conversations=[],  # Initially no hidden conversations
-                user_metadata={},  # Empty user metadata initially
-                last_refresh=None,  # No refresh yet
-                sidechain_relationships=sidechain_relationships,
-                subagent_relationships=subagent_relationships,
-                cross_session_chains=cross_session_chains,
-                aggregate_statistics=aggregate_stats,
-                conversation_statistics=conversation_stats,
             )
 
             # Write manifest
@@ -351,70 +177,6 @@ class Archiver:
             # Clean up temporary directory
             if temp_dir.exists():
                 shutil.rmtree(temp_dir)
-
-    def _has_internal_compaction(self, file_path: Path) -> bool:
-        """Check if a conversation file has internal compaction.
-
-        This looks for isCompactSummary: true anywhere in the file
-        (not just the first line).
-
-        Args:
-            file_path: Path to the conversation file
-
-        Returns:
-            True if internal compaction is detected
-        """
-        try:
-            with open(file_path, encoding="utf-8") as f:
-                for line in f:
-                    data = json.loads(line)
-                    if data.get("isCompactSummary", False) is True:
-                        return True
-        except (OSError, json.JSONDecodeError):
-            pass
-        return False
-
-    def _is_auto_linked_conversation(self, file_path: Path) -> bool:
-        """Check if a conversation is auto-linked vs a true continuation.
-
-        Auto-linked conversations have:
-        - Brief summary title (<100 chars)
-        - No isCompactSummary in first few lines
-
-        True continuations have:
-        - isCompactSummary: true (handled separately)
-        - OR detailed continuation summary
-
-        Args:
-            file_path: Path to the conversation file
-
-        Returns:
-            True if this is an auto-linked conversation (not a true continuation)
-        """
-        try:
-            with open(file_path, encoding="utf-8") as f:
-                lines = f.readlines()
-
-                # Check first line for summary
-                if lines:
-                    first_data = json.loads(lines[0])
-                    if first_data.get("type") == "summary":
-                        summary = first_data.get("summary", "")
-                        # Brief summaries (<100 chars) indicate auto-linking
-                        # Also check if it doesn't contain continuation keywords
-                        if len(summary) < 100 and "continued from" not in summary.lower():
-                            return True
-
-                # Check first 5 lines for isCompactSummary
-                # If found, it's a true continuation, not auto-linked
-                for line in lines[:5]:
-                    data = json.loads(line)
-                    if data.get("isCompactSummary", False) is True:
-                        return False
-
-        except (OSError, json.JSONDecodeError):
-            pass
-        return False
 
     def _extract_conversation_title(self, file_path: Path) -> str:
         """Extract a meaningful title from the conversation.
@@ -487,63 +249,6 @@ class Archiver:
 
         return "Conversation"
 
-    def _collect_todo_files(self, conversations: list[ConversationFile], todos_dir: Path) -> dict[str, dict[str, Any]]:
-        """Collect todo files for the conversations.
-
-        Args:
-            conversations: List of conversation files
-            todos_dir: Directory to copy todo files to
-
-        Returns:
-            Dictionary of todo metadata for manifest
-        """
-        todos_metadata: dict[str, dict[str, Any]] = {}
-        claude_todos_dir = Path.home() / ".claude" / "todos"
-
-        if not claude_todos_dir.exists():
-            return todos_metadata
-
-        # Collect unique session IDs
-        session_ids = {conv.session_id for conv in conversations if conv.session_id}
-
-        for session_id in session_ids:
-            # Try different naming patterns
-            patterns = [
-                f"{session_id}-agent-{session_id}.json",
-                f"{session_id}.json",
-            ]
-
-            for pattern in patterns:
-                todo_file = claude_todos_dir / pattern
-                if todo_file.exists():
-                    # Copy todo file to archive
-                    dest_file = todos_dir / f"{session_id}.json"
-                    shutil.copy2(todo_file, dest_file)
-
-                    # Read todo file for metadata
-                    try:
-                        with open(todo_file, encoding="utf-8") as f:
-                            todos = json.load(f)
-
-                        # Calculate statistics
-                        status_counts = {"completed": 0, "in_progress": 0, "pending": 0}
-                        for todo in todos:
-                            status = todo.get("status", "pending")
-                            if status in status_counts:
-                                status_counts[status] += 1
-
-                        todos_metadata[session_id] = {
-                            "file": f"todos/{session_id}.json",
-                            "total_count": len(todos),
-                            "status_counts": status_counts,
-                        }
-                    except (OSError, json.JSONDecodeError):
-                        pass
-
-                    break  # Found the todo file, no need to check other patterns
-
-        return todos_metadata
-
     def extract_archive(self, archive_path: Path, extract_to: Path | None = None) -> Path:
         """Extract an archive for viewing.
 
@@ -560,403 +265,3 @@ class Archiver:
             zipf.extractall(extract_dir)
 
         return extract_dir
-
-    def update_manifest(self, extracted_dir: Path, updated_manifest: dict[str, Any]) -> None:
-        """Update manifest in extracted archive.
-
-        Args:
-            extracted_dir: Path to extracted archive directory
-            updated_manifest: Updated manifest data
-        """
-        manifest_path = extracted_dir / "manifest.json"
-        with open(manifest_path, "w", encoding="utf-8") as f:
-            json.dump(updated_manifest, f, indent=2)
-
-    def repack_archive(self, extracted_dir: Path, archive_path: Path) -> Path:
-        """Repack an extracted archive with updates.
-
-        Args:
-            extracted_dir: Path to extracted archive directory
-            archive_path: Path to original archive file
-
-        Returns:
-            Path to the repacked archive
-        """
-        # Update viewer with new manifest
-        manifest_path = extracted_dir / "manifest.json"
-        with open(manifest_path, encoding="utf-8") as f:
-            manifest_data = json.load(f)
-
-        viewer_path = extracted_dir / "viewer.html"
-        self.viewer.save_viewer(viewer_path, manifest_data)
-
-        # Create new ZIP archive
-        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-            for file_path in extracted_dir.rglob("*"):
-                if file_path.is_file():
-                    arcname = file_path.relative_to(extracted_dir)
-                    zipf.write(file_path, arcname)
-
-        return archive_path
-
-    def _build_sidechain_relationships(self, conversations: list[ConversationFile]) -> dict[str, list[str]]:
-        """Build a map of conversation sessions that have sidechains.
-
-        Since sidechains share the same session ID as their parent,
-        we track which conversations contain sidechains.
-
-        Args:
-            conversations: List of conversation files
-
-        Returns:
-            Dictionary mapping session IDs to list of related sidechain info
-        """
-        relationships: dict[str, list[str]] = {}
-
-        for conv in conversations:
-            if conv.has_sidechains:
-                # This conversation contains sidechain messages
-                if conv.session_id not in relationships:
-                    relationships[conv.session_id] = []
-                # Store metadata about the sidechains
-                relationships[conv.session_id].append(f"sidechains:{conv.sidechain_count}")
-
-        return relationships if relationships else {}
-
-    def _build_subagent_relationships(self, conversations: list[ConversationFile]) -> dict[str, Any]:
-        """Build subagent parent-child relationships from conversations.
-
-        Args:
-            conversations: List of conversation files
-
-        Returns:
-            Dictionary with subagent relationship data
-        """
-        subagent_relationships: dict[str, Any] = {}
-
-        for conv in conversations:
-            if conv.child_session_ids:
-                subagent_relationships[conv.session_id] = {
-                    "child_sessions": conv.child_session_ids,
-                    "invocation_count": len(conv.subagent_invocations),
-                    "subagent_types": conv.sidechain_metadata.get("subagent_types", []),
-                }
-
-        return subagent_relationships
-
-    def _build_cross_session_chains(self, conversations: list[ConversationFile]) -> dict[str, list[str]]:
-        """Build cross-session threading chains from conversations.
-
-        Args:
-            conversations: List of conversation files
-
-        Returns:
-            Dictionary mapping child session IDs to their parent session IDs
-        """
-        cross_session_chains: dict[str, list[str]] = {}
-
-        for conv in conversations:
-            if conv.parent_session_ids:
-                cross_session_chains[conv.session_id] = conv.parent_session_ids
-
-        return cross_session_chains
-
-    def _calculate_aggregate_statistics(self, manifest_conversations: list[dict[str, Any]]) -> dict[str, Any]:
-        """Calculate aggregate statistics across all conversations.
-
-        Args:
-            manifest_conversations: List of conversation manifests with stats
-
-        Returns:
-            Dictionary with aggregate statistics
-        """
-        aggregate: dict[str, Any] = {
-            "total_human_messages": 0,
-            "total_assistant_messages": 0,
-            "total_tool_results": 0,
-            "total_sidechain_messages": 0,
-            "total_task_invocations": 0,
-            "all_tool_uses": {},
-            "all_mcp_tool_uses": {},
-            "conversations_with_sidechains": 0,
-            "conversations_with_images": 0,
-            "conversations_with_thinking": 0,
-        }
-
-        for conv in manifest_conversations:
-            stats = conv.get("statistics", {})
-
-            # Aggregate message counts
-            aggregate["total_human_messages"] += stats.get("human_messages", 0)
-            aggregate["total_assistant_messages"] += stats.get("assistant_messages", 0)
-            aggregate["total_tool_results"] += stats.get("tool_result_messages", 0)
-            aggregate["total_sidechain_messages"] += stats.get("sidechain_messages", 0)
-            aggregate["total_task_invocations"] += stats.get("task_invocations", 0)
-
-            # Track conversations with special features
-            if stats.get("has_sidechains"):
-                aggregate["conversations_with_sidechains"] += 1
-            if stats.get("has_images"):
-                aggregate["conversations_with_images"] += 1
-            if stats.get("has_thinking"):
-                aggregate["conversations_with_thinking"] += 1
-
-            # Aggregate tool usage
-            for tool_name, count in stats.get("tool_uses", {}).items():
-                all_tools: dict[str, int] = aggregate["all_tool_uses"]  # type: ignore
-                all_tools[tool_name] = all_tools.get(tool_name, 0) + count
-
-            # Aggregate MCP tool usage
-            for tool_name, count in stats.get("mcp_tool_uses", {}).items():
-                mcp_tools: dict[str, int] = aggregate["all_mcp_tool_uses"]  # type: ignore
-                mcp_tools[tool_name] = mcp_tools.get(tool_name, 0) + count
-
-        return aggregate
-
-    def _calculate_conversation_statistics(self, manifest_conversations: list[dict[str, Any]]) -> dict[str, Any]:
-        """Calculate conversation statistics by type for the viewer header.
-
-        Args:
-            manifest_conversations: List of conversation manifests with types
-
-        Returns:
-            Dictionary with conversation statistics by type
-        """
-        # Count conversations by type
-        type_counts: dict[str, int] = {}
-        shown_count = 0
-        hidden_count = 0
-
-        for conv in manifest_conversations:
-            conv_type = conv.get("conversation_type", "original")
-            type_counts[conv_type] = type_counts.get(conv_type, 0) + 1
-
-            if conv.get("display_by_default", True):
-                shown_count += 1
-            else:
-                hidden_count += 1
-
-        return {
-            "total_count": len(manifest_conversations),
-            "shown_count": shown_count,
-            "hidden_count": hidden_count,
-            "by_type": {
-                "original": type_counts.get("original", 0),
-                "true_continuation": type_counts.get("true_continuation", 0),
-                "sdk_generated": type_counts.get("sdk_generated", 0),
-                "command_only": type_counts.get("command_only", 0),
-                "multi_agent_workflow": type_counts.get("multi_agent_workflow", 0),
-                "subagent_sidechain": type_counts.get("subagent_sidechain", 0),
-                "context_history": type_counts.get("context_history", 0),
-                "completion_marker": type_counts.get("completion_marker", 0),
-                "snapshot": type_counts.get("snapshot", 0),
-                "auto_linked": type_counts.get("auto_linked", 0),
-                "post_compaction": type_counts.get("post_compaction", 0),
-            },
-        }
-
-    def refresh_archive(
-        self,
-        archive_path: Path,
-        project_path: Path | None = None,
-        project_aliases: list[str] | None = None,
-        sanitize: bool = True,
-        include_todos: bool = True,
-    ) -> Path:
-        """Refresh an existing archive with new conversations while preserving user modifications.
-
-        Args:
-            archive_path: Path to existing archive
-            project_path: Project path to refresh from (uses original if None)
-            project_aliases: Updated project aliases
-            sanitize: Whether to sanitize sensitive data in new conversations
-            include_todos: Whether to include todo files
-
-        Returns:
-            Path to refreshed archive
-        """
-        # Extract existing archive
-        extracted_dir = self.extract_archive(archive_path)
-
-        try:
-            # Load existing manifest
-            manifest_path = extracted_dir / "manifest.json"
-            with open(manifest_path, encoding="utf-8") as f:
-                existing_manifest = json.load(f)
-
-            # Use existing project path and aliases if not provided
-            if project_path is None:
-                project_path = Path(existing_manifest["project_path"])
-
-            # Use existing aliases if not provided, or merge with existing if both provided
-            existing_aliases = existing_manifest.get("project_aliases", [])
-            if project_aliases is None:
-                # No new aliases provided, use existing ones
-                project_aliases = existing_aliases
-            else:
-                # Merge new aliases with existing ones, removing duplicates
-                all_aliases = list(set(existing_aliases + project_aliases))
-                project_aliases = all_aliases
-
-            # Get existing conversation session IDs
-            existing_session_ids = {conv["session_id"] for conv in existing_manifest["conversations"]}
-
-            # Discover new conversations
-            new_conversations = self.discovery.discover_project_conversations(
-                project_path,
-                exclude_snapshots=False,
-            )
-
-            # Add from aliases if provided
-            all_paths = [str(project_path)]
-            if project_aliases:
-                for alias in project_aliases:
-                    # Handle wildcard patterns
-                    if "*" in alias or "?" in alias:
-                        # Use glob to expand wildcards
-                        alias_paths = list(Path(alias).parent.glob(Path(alias).name))
-                        for alias_path in alias_paths:
-                            if alias_path.is_dir():
-                                alias_conversations = self.discovery.discover_project_conversations(
-                                    alias_path,
-                                    exclude_snapshots=False,
-                                )
-                                new_conversations.extend(alias_conversations)
-                                all_paths.append(str(alias_path))
-                    else:
-                        # Handle as literal path
-                        alias_path = Path(alias)
-                        alias_conversations = self.discovery.discover_project_conversations(
-                            alias_path,
-                            exclude_snapshots=False,
-                        )
-                        new_conversations.extend(alias_conversations)
-                        all_paths.append(str(alias_path))
-
-            # Filter to only new conversations
-            new_conversations = [conv for conv in new_conversations if conv.session_id not in existing_session_ids]
-
-            if not new_conversations:
-                # No new conversations, but still update serve.py and viewer.html with latest versions
-                serve_template = Path(__file__).parent / "serve_template.py"
-                serve_path = extracted_dir / "serve.py"
-                shutil.copy2(serve_template, serve_path)
-
-                existing_manifest["last_refresh"] = datetime.now(UTC).isoformat()
-                if project_aliases:
-                    existing_manifest["project_aliases"] = all_paths
-                self.update_manifest(extracted_dir, existing_manifest)
-                return self.repack_archive(extracted_dir, archive_path)
-
-            # Process new conversations
-            conversations_dir = extracted_dir / "conversations"
-            new_manifest_conversations: list[dict[str, Any]] = []
-            total_new_messages = 0
-
-            for conv in new_conversations:
-                # Copy and optionally sanitize conversation file
-                output_filename = conv.path.name
-                output_file = conversations_dir / output_filename
-
-                if sanitize:
-                    self.sanitizer.sanitize_file(conv.path, output_file)
-                else:
-                    shutil.copy2(conv.path, output_file)
-
-                # Parse for statistics
-                entries = self.parser.parse_file(output_file)
-                stats = self.parser.extract_statistics(entries)
-                total_new_messages += stats["total_messages"]
-
-                # Extract conversation title
-                conversation_title = self._extract_conversation_title(output_file)
-
-                # Add to manifest
-                manifest_conv = {
-                    "session_id": conv.session_id,
-                    "file": f"conversations/{output_filename}",
-                    "title": conversation_title,
-                    "message_count": conv.message_count,
-                    "first_timestamp": conv.first_timestamp,
-                    "last_timestamp": conv.last_timestamp,
-                    "starts_with_summary": conv.starts_with_summary,
-                    "is_post_compaction": conv.parent_session_id is not None,
-                    "parent_session_id": conv.parent_session_id,
-                    "has_sidechains": conv.has_sidechains,
-                    "sidechain_count": conv.sidechain_count,
-                    "statistics": stats,
-                    "conversation_type": "original",  # Default, will be updated
-                    "display_by_default": True,
-                }
-
-                new_manifest_conversations.append(manifest_conv)
-
-            # Update existing manifest with new data
-            existing_manifest["conversations"].extend(new_manifest_conversations)
-            existing_manifest["conversation_count"] = len(existing_manifest["conversations"])
-            existing_manifest["total_messages"] += total_new_messages
-            existing_manifest["last_refresh"] = datetime.now(UTC).isoformat()
-
-            if project_aliases:
-                existing_manifest["project_aliases"] = all_paths
-
-            # Update date range if necessary
-            new_timestamps: list[str] = [
-                c["first_timestamp"] for c in new_manifest_conversations if c.get("first_timestamp")
-            ]
-            if new_timestamps:
-                current_earliest = existing_manifest["date_range"]["earliest"]
-                current_latest = existing_manifest["date_range"]["latest"]
-
-                if current_earliest is None or min(new_timestamps) < current_earliest:
-                    existing_manifest["date_range"]["earliest"] = min(new_timestamps)
-
-                latest_timestamps: list[str] = [
-                    c["last_timestamp"] for c in new_manifest_conversations if c.get("last_timestamp")
-                ]
-                if latest_timestamps and (current_latest is None or max(latest_timestamps) > current_latest):
-                    existing_manifest["date_range"]["latest"] = max(latest_timestamps)
-
-            # Rebuild sidechain relationships and aggregate statistics with all conversations
-            all_conversations = existing_manifest["conversations"]
-            existing_manifest["sidechain_relationships"] = self._build_sidechain_relationships_from_manifest(
-                all_conversations
-            )
-            existing_manifest["aggregate_statistics"] = self._calculate_aggregate_statistics(all_conversations)
-
-            # Update serve.py and viewer.html with latest versions
-            serve_template = Path(__file__).parent / "serve_template.py"
-            serve_path = extracted_dir / "serve.py"
-            shutil.copy2(serve_template, serve_path)
-
-            # Save updated manifest and repack (this also updates viewer.html)
-            self.update_manifest(extracted_dir, existing_manifest)
-            return self.repack_archive(extracted_dir, archive_path)
-
-        finally:
-            # Clean up extracted directory
-            if extracted_dir.exists():
-                shutil.rmtree(extracted_dir)
-
-    def _build_sidechain_relationships_from_manifest(
-        self, manifest_conversations: list[dict[str, Any]]
-    ) -> dict[str, list[str]]:
-        """Build sidechain relationships from manifest conversation data.
-
-        Args:
-            manifest_conversations: List of conversation manifests
-
-        Returns:
-            Dictionary mapping session IDs to sidechain info
-        """
-        relationships: dict[str, list[str]] = {}
-
-        for conv in manifest_conversations:
-            if conv.get("has_sidechains"):
-                session_id = conv["session_id"]
-                if session_id not in relationships:
-                    relationships[session_id] = []
-                sidechain_count = conv.get("sidechain_count", 0)
-                relationships[session_id].append(f"sidechains:{sidechain_count}")
-
-        return relationships if relationships else {}

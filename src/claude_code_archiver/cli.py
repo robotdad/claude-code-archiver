@@ -1,6 +1,5 @@
 """Command-line interface for Claude Code Archiver."""
 
-import sys
 from pathlib import Path
 
 import click
@@ -77,36 +76,22 @@ def main(
             archiver = Archiver(output_dir=output)
             console.print(f"\n🔄 Refreshing archive: [cyan]{refresh}[/cyan]")
 
-            # Convert aliases to list of strings
-            project_aliases = list(alias) if alias else None
-
-            refreshed_archive = archiver.refresh_archive(
-                archive_path=refresh,
-                project_path=project_path,
-                project_aliases=project_aliases,
-                sanitize=not no_sanitize,
-                include_todos=not no_todos,
-            )
-
-            console.print(f"\n✅ Archive refreshed: [green]{refreshed_archive}[/green]")
-            console.print("  ✓ Updated viewer and server files with latest features")
-            console.print("  ✓ Preserved hidden conversations and user preferences")
-            return
+            # Refresh not implemented in simplified version
+            console.print("[yellow]Archive refresh not available in simplified version[/yellow]")
+            raise SystemExit(1)
 
         # For non-refresh operations, project_path is required
         if project_path is None:
             console.print("[red]Error:[/red] PROJECT_PATH is required when not using --refresh")
-            sys.exit(1)
-
-        from .discovery import ConversationFile
+            raise SystemExit(1)
 
         discovery = ProjectDiscovery()
 
         # Discover conversations from main project
         console.print(f"\n🔍 Discovering conversations for: [cyan]{project_path}[/cyan]")
-        conversations: list[ConversationFile] = discovery.discover_project_conversations(
-            project_path, exclude_snapshots=False
-        )
+        from .models import SessionFile
+
+        conversations: list[SessionFile] = discovery.discover_project_conversations(project_path)
 
         # Add conversations from aliases
         if alias:
@@ -138,14 +123,14 @@ def main(
                     console.print(f"    Found [green]{len(alias_conversations)}[/green] conversation(s)")
 
         # Remove duplicates based on session_id
-        unique_conversations: dict[str, ConversationFile] = {}
+        unique_conversations: dict[str, SessionFile] = {}
         for conv in conversations:
             unique_conversations[conv.session_id] = conv
         conversations = list(unique_conversations.values())
 
         if not conversations:
             console.print("[yellow]No conversations found for this project.[/yellow]")
-            sys.exit(1)
+            raise SystemExit(1)
 
         console.print(f"Found [green]{len(conversations)}[/green] conversation(s)")
 
@@ -159,15 +144,10 @@ def main(
             table.add_column("Continuation", style="yellow")
 
             for conv in conversations:
-                # Show snapshot info if present
-                if conv.is_snapshot:
-                    continuation = f"📸 {conv.snapshot_type}"
-                elif conv.starts_with_summary:
-                    continuation = "✓ continuation"
-                else:
-                    continuation = ""
-                size_kb = conv.size / 1024
-                started = conv.first_timestamp[:10] if conv.first_timestamp else "Unknown"
+                # No continuation detection in simplified version
+                continuation = ""
+                size_kb = conv.size_bytes / 1024
+                started = conv.modified_at[:10] if hasattr(conv, "modified_at") else "Unknown"
 
                 table.add_row(
                     conv.session_id[:8] + "...",
@@ -178,15 +158,6 @@ def main(
                 )
 
             console.print(table)
-
-            # Show continuation chains
-            from .continuation_detector import find_continuation_chains
-
-            chains = find_continuation_chains(conversations)
-            if chains:
-                console.print("\n🔗 Continuation chains detected:")
-                for parent, children in chains.items():
-                    console.print(f"  {parent[:8]}... → {', '.join(c[:8] + '...' for c in children)}")
         else:
             # Create archive
             archiver = Archiver(output_dir=output)
@@ -203,16 +174,12 @@ def main(
             if not no_todos:
                 console.print("  ✓ Including todo files")
 
-            # Convert aliases to list for archiver
-            project_aliases = list(alias) if alias else None
+            # Aliases not supported in simplified version
 
             archive_path = archiver.create_archive(
                 project_path=project_path,
                 sanitize=sanitize,
                 output_name=name,
-                include_snapshots=True,
-                include_todos=not no_todos,
-                project_aliases=project_aliases,
             )
 
             console.print(f"\n✅ Archive created: [green]{archive_path}[/green]")
@@ -226,10 +193,10 @@ def main(
 
     except ValueError as e:
         console.print(f"[red]Error:[/red] {e}")
-        sys.exit(1)
+        raise SystemExit(1)
     except Exception as e:
         console.print(f"[red]Unexpected error:[/red] {e}")
-        sys.exit(1)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
